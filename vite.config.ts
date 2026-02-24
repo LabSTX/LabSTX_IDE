@@ -11,6 +11,21 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
       proxy: {
+        '/api/clarity': {
+          target: 'http://localhost:5001',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/api/auth': {
+          target: 'http://localhost:5001',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/api/github': {
+          target: 'http://localhost:5001',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api/rpc': {
           target: 'https://node.testnet.casper.network',
           changeOrigin: true,

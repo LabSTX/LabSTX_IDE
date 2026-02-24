@@ -144,7 +144,7 @@ export const PublicCloneModal: React.FC<PublicCloneModalProps> = ({ onClone }) =
                         </Button>
                     </div>
 
-                    <div className="pt-4 border-t border-caspier-border/50">
+                    <div className="pt-4 border-t border-caspier-border0">
                         <div className="flex items-center gap-2 text-[10px] text-caspier-muted uppercase font-bold tracking-tighter">
                             <PlayIcon className="w-3 h-3" />
                             <span>Tip: Copy the HTTPS link from any public GitHub repo.</span>

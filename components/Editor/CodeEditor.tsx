@@ -9,10 +9,61 @@ interface CodeEditorProps {
   readOnly?: boolean;
   settings: ProjectSettings;
   theme: 'dark' | 'light';
+  action?: { type: 'undo' | 'redo' | 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number };
+  onSave?: () => void;
+  /** When set, opens Monaco's find widget and highlights all matches */
+  findQuery?: string;
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({ code, language, onChange, readOnly = false, settings, theme }) => {
+const CodeEditor: React.FC<CodeEditorProps> = ({
+  code, language, onChange,
+  readOnly = false, settings, theme,
+  action, onSave, findQuery
+}) => {
   const monaco = useMonaco();
+  const editorRef = React.useRef<any>(null);
+
+  // Handle external actions (Undo, Redo, Save, GotoLine)
+  useEffect(() => {
+    if (!editorRef.current || !action || !action.type) return;
+
+    if (action.type === 'undo') {
+      editorRef.current.trigger('toolbar', 'undo', null);
+    } else if (action.type === 'redo') {
+      editorRef.current.trigger('toolbar', 'redo', null);
+    } else if (action.type === 'save') {
+      onSave?.();
+    } else if (action.type === 'gotoLine' && action.line) {
+      const line = action.line;
+      const column = action.column ?? 1;
+      editorRef.current.revealLineInCenter(line);
+      editorRef.current.setPosition({ lineNumber: line, column });
+      editorRef.current.focus();
+    }
+  }, [action, onSave]);
+
+  // Handle find-in-code: open Monaco's find widget and set search string
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    if (findQuery === undefined) return;
+    if (findQuery === '') {
+      // Close find widget when query is cleared
+      editor.trigger('searchBox', 'closeFindWidget', null);
+      return;
+    }
+    try {
+      // Open the find widget
+      editor.trigger('searchBox', 'actions.find', null);
+      // Access the find controller contribution to set the search string
+      const findController = editor.getContribution('editor.contrib.findController') as any;
+      if (findController) {
+        findController.setSearchString(findQuery);
+      }
+    } catch (e) {
+      console.warn('Find widget error:', e);
+    }
+  }, [findQuery]);
 
   useEffect(() => {
     if (monaco) {
@@ -118,6 +169,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, language, onChange, readO
         language={mapLanguage(language)}
         value={code}
         onChange={onChange}
+        onMount={(editor) => {
+          editorRef.current = editor;
+        }}
         // Initial theme logic is handled by the useEffect above
         theme={theme === 'dark' ? 'caspier-dark' : 'caspier-light'}
         options={{

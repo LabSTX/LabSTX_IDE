@@ -112,6 +112,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isInputMinimized, setIsInputMinimized] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -281,7 +282,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
         return parts.map((part, i) => {
             if (part.type === 'bold') return <strong key={i} className="text-caspier-text font-bold">{part.content}</strong>;
             if (part.type === 'italic') return <em key={i} className="text-caspier-muted italic">{part.content}</em>;
-            if (part.type === 'inline-code') return <code key={i} className="bg-caspier-dark px-1.5 py-0.5 rounded text-caspier-red font-mono text-[11px] border border-caspier-border/50">{part.content}</code>;
+            if (part.type === 'inline-code') return <code key={i} className="bg-caspier-dark px-1.5 py-0.5 rounded text-caspier-red font-mono text-[11px] border border-caspier-border0">{part.content}</code>;
             if (part.type === 'mention') {
                 const file = getAllFiles.find(f => f.name === part.content);
                 return (
@@ -401,11 +402,11 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
             <div className="h-14 px-4 flex items-center justify-between bg-caspier-panel/30 border-b border-caspier-border backdrop-blur-xl z-20">
                 <div className="flex items-center gap-3">
                     <div className="relative">
-                        <div className="absolute inset-0 bg-caspier-red blur-lg opacity-20 animate-pulse" />
+                        <div className="absolute inset-0 opacity-20 " />
                         <BotIcon className="text-caspier-red w-5 h-5 relative z-10" />
                     </div>
                     <div>
-                        <h2 className="text-[11px] font-black text-caspier-text tracking-[0.2em] uppercase">LabSTX Assistant</h2>
+                        <h2 className="text-[11px] font-black text-caspier-text">LabSTX AI</h2>
                         <div className="flex items-center gap-1.5 mt-0.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
                             <span className="text-[9px] text-caspier-muted font-bold uppercase tracking-tighter">
@@ -424,10 +425,10 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                         <div className={`
-                            max-w-[100%] rounded-2xl p-4 text-sm transition-all
+                            max-w-[100%]  p-4 text-sm transition-all
                             ${msg.role === 'user'
-                                ? ' bg-gray-600/20 text-caspier-text font-medium rounded-tr-none ml-8'
-                                : 'bg-caspier-panel/40 border border-caspier-border text-caspier-text opacity-90 rounded-tl-none w-full shadow-2xl'}
+                                ? ' bg-gray-600/20 text-caspier-text font-medium  ml-8'
+                                : 'bg-caspier-panel/40 border border-caspier-border text-caspier-text opacity-90  w-full '}
                         `}>
                             {renderMessageContent(msg.text)}
                         </div>
@@ -450,10 +451,10 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
             </div>
 
             {/* Input Section - Floating style */}
-            <div className="p-6 bg-gradient-to-t from-caspier-black to-transparent">
+            <div className={`p-6 bg-gradient-to-t from-caspier-black to-transparent transition-all duration-300 ${isInputMinimized ? 'pb-2 pt-0' : 'pb-6'}`}>
                 <div className="relative group">
                     {/* Mention Popup */}
-                    {mentionQuery !== null && filteredFiles.length > 0 && (
+                    {mentionQuery !== null && filteredFiles.length > 0 && !isInputMinimized && (
                         <div className="absolute bottom-full left-0 right-0 mb-4 bg-caspier-dark border border-caspier-border shadow-2xl rounded-xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                             <div className="text-[9px] text-caspier-muted px-4 py-2 bg-caspier-panel border-b border-caspier-border uppercase font-black tracking-widest">Connect Context</div>
                             {filteredFiles.map((file, idx) => (
@@ -469,28 +470,59 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
                         </div>
                     )}
 
-                    <div className="relative flex flex-col bg-caspier-panel/30 border border-caspier-border rounded-2xl overflow-hidden focus-within:border-caspier-red transition-all focus-within:shadow-[0_0_20px_rgba(0,123,255,0.05)]">
-                        <textarea
-                            ref={inputRef}
-                            rows={1}
-                            className="w-full bg-transparent text-caspier-text text-sm px-4 py-4 pr-14 focus:outline-none placeholder:text-caspier-muted/40 resize-none min-h-[56px] max-h-[200px]"
-                            placeholder="Type @ to link files..."
-                            value={input}
-                            onChange={handleInputChange}
-                            onKeyDown={handleKeyDown}
-                            disabled={loading}
-                        />
-                        <div className="px-4 py-2 border-t border-caspier-border flex justify-between items-center bg-caspier-black/10">
-                            <span className="text-[9px] text-caspier-muted font-bold uppercase">Markdown Supported</span>
-                            <button
-                                onClick={handleSend}
-                                disabled={loading || !input.trim()}
-                                className={`flex items-center gap-2 px-3 py-1 rounded-lg transition-all ${input.trim() ? 'text-caspier-red bg-caspier-red/10 animate-bounce-subtle' : 'text-caspier-muted/20 cursor-not-allowed'}`}
+                    <div className={`relative flex flex-col bg-caspier-panel/30 border border-caspier-border rounded-2xl overflow-hidden focus-within:border-caspier-red transition-all focus-within:shadow-[0_0_20px_rgba(0,123,255,0.05)] ${isInputMinimized ? 'min-h-0 h-10' : ''}`}>
+                        {!isInputMinimized ? (
+                            <>
+                                <textarea
+                                    ref={inputRef}
+                                    rows={1}
+                                    className="w-full bg-transparent text-caspier-text text-sm px-4 py-4 pr-14 focus:outline-none placeholder:text-caspier-muted/40 resize-none min-h-[56px] max-h-[200px]"
+                                    placeholder="Type @ to link files..."
+                                    value={input}
+                                    onChange={handleInputChange}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={loading}
+                                />
+                                <div className="px-4 py-2 border-t border-caspier-border flex justify-between items-center bg-caspier-black/10">
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-[9px] text-caspier-muted font-bold uppercase">Markdown Supported</span>
+                                        <button
+                                            onClick={() => setIsInputMinimized(true)}
+                                            className="text-[9px] text-caspier-muted hover:text-caspier-text font-black uppercase tracking-widest flex items-center gap-1"
+                                        >
+                                            Minimize <ChevronDownIcon className="w-2.5 h-2.5" />
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={handleSend}
+                                        disabled={loading || !input.trim()}
+                                        className={`flex items-center gap-2 px-3 py-1 rounded-lg transition-all ${input.trim() ? 'text-caspier-red bg-caspier-red/10 animate-bounce-subtle' : 'text-caspier-muted/20 cursor-not-allowed'}`}
+                                    >
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Send</span>
+                                        <SendIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <div
+                                className="flex items-center justify-between px-4 h-full cursor-pointer hover:bg-caspier-hover/30 transition-colors"
+                                onClick={() => setIsInputMinimized(false)}
                             >
-                                <span className="text-[10px] font-black uppercase tracking-widest">Send</span>
-                                <SendIcon className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                                <span className="text-[10px] text-caspier-muted font-black uppercase tracking-widest flex items-center gap-2">
+                                    <BotIcon className="w-3 h-3 text-caspier-red" />
+                                    AI Input Collapsed
+                                </span>
+                                <div className="flex items-center gap-3">
+                                    {input.trim() && <span className="text-[9px] text-caspier-red bg-caspier-red/10 px-1.5 rounded">Pending Content</span>}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setIsInputMinimized(false); }}
+                                        className="text-[10px] text-caspier-red font-black uppercase tracking-widest hover:underline"
+                                    >
+                                        Expand
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

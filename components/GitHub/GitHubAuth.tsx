@@ -43,12 +43,20 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
     const checkAuth = async () => {
         try {
             const response = await fetch('/api/github/user');
-            const data = await response.json();
-            if (data.authenticated) {
-                setUser(data.user);
+            if (!response.ok) return;
+
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const data = await response.json();
+                if (data.authenticated) {
+                    setUser(data.user);
+                }
             }
         } catch (error) {
-            console.error('Auth check failed:', error);
+            // Silently fail in dev if backend is missing
+            if (process.env.NODE_ENV === 'production') {
+                console.error('Auth check failed:', error);
+            }
         } finally {
             setLoading(false);
         }
@@ -86,44 +94,69 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
         <div className="relative" ref={menuRef}>
             <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="flex items-center gap-2 px-2 py-1 bg-caspier-dark border border-caspier-border rounded hover:bg-caspier-black hover:border-caspier-red transition-colors"
+                className="flex items-center gap-2.5 pl-1.5 pr-3 py-1 bg-caspier-dark border border-caspier-border rounded-full hover:bg-caspier-black hover:border-labstx-orange transition-all duration-200 group shadow-sm active:translate-y-[1px]"
             >
-                <GitHubIcon className="w-4 h-4 text-caspier-muted" />
-                <span className="text-xs font-medium">{user.login}</span>
-                {user.avatar_url && (
+                {user.avatar_url ? (
                     <img
                         src={user.avatar_url}
                         alt={user.login}
-                        className="w-5 h-5 rounded-full"
+                        className="w-5 h-5 rounded-full border border-caspier-border group-hover:border-labstx-orange transition-colors"
                     />
+                ) : (
+                    <div className="w-5 h-5 rounded-full bg-caspier-panel flex items-center justify-center border border-caspier-border">
+                        <GitHubIcon className="w-3 h-3 text-caspier-muted" />
+                    </div>
                 )}
-                <ChevronDownIcon className="w-3 h-3 text-caspier-muted" />
+                <span className="text-[11px] font-bold text-caspier-text group-hover:text-labstx-orange transition-colors">{user.login}</span>
+                <ChevronDownIcon className={`w-3 h-3 text-caspier-muted transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-caspier-dark border border-caspier-border rounded shadow-lg z-50">
-                    <button
-                        onClick={() => { setModalType('clone'); setMenuOpen(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-caspier-black transition-colors"
-                    >
-                        <CloneIcon className="w-4 h-4" />
-                        Clone
-                    </button>
-                    <button
-                        onClick={() => { setModalType('gist'); setMenuOpen(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-caspier-black transition-colors"
-                    >
-                        <GistIcon className="w-4 h-4" />
-                        Publish to Gist
-                    </button>
-                    <div className="border-t border-caspier-border" />
-                    <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-caspier-black transition-colors"
-                    >
-                        <DisconnectIcon className="w-4 h-4" />
-                        Disconnect
-                    </button>
+                <div className="absolute right-0 top-full mt-2 w-52 bg-caspier-black/80 backdrop-blur-xl border border-caspier-border rounded-lg shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3 border-b border-caspier-border bg-caspier-panel/30">
+                        <div className="flex items-center gap-3">
+                            <img src={user.avatar_url} className="w-8 h-8 rounded-lg shadow-inner" />
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-black text-caspier-text truncate">{user.name || user.login}</span>
+                                <span className="text-[10px] text-caspier-muted font-bold tracking-tighter uppercase opacity-70">GitHub Developer</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-1.5">
+                        <button
+                            onClick={() => { setModalType('clone'); setMenuOpen(false); }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-[11px] font-bold text-caspier-text hover:bg-labstx-orange/10 hover:text-labstx-orange rounded-md transition-all group"
+                        >
+                            <div className="flex items-center gap-2">
+                                <CloneIcon className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" />
+                                <span>Clone Project</span>
+                            </div>
+                            <span className="text-[9px] text-caspier-muted font-mono opacity-50 px-1 border border-caspier-border rounded">C</span>
+                        </button>
+                        <button
+                            onClick={() => { setModalType('gist'); setMenuOpen(false); }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-[11px] font-bold text-caspier-text hover:bg-labstx-orange/10 hover:text-labstx-orange rounded-md transition-all group"
+                        >
+                            <div className="flex items-center gap-2">
+                                <GistIcon className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" />
+                                <span>Publish Gist</span>
+                            </div>
+                            <span className="text-[9px] text-caspier-muted font-mono opacity-50 px-1 border border-caspier-border rounded">G</span>
+                        </button>
+                    </div>
+
+                    <div className="border-t border-caspier-border m-1.5 opacity-50" />
+
+                    <div className="p-1.5 pt-0">
+                        <button
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-red-500 hover:bg-red-500/10 rounded-md transition-all group"
+                        >
+                            <DisconnectIcon className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" />
+                            <span>Sign Out</span>
+                        </button>
+                    </div>
                 </div>
             )}
 

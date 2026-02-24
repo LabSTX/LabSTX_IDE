@@ -1,8 +1,7 @@
 import { CompilationResult, ContractMetadata, EntryPoint, EntryPointArg } from '../../types';
-import { getSimnet } from './simnet';
 
 /**
- * Stacks Clarity Compiler/Checker Service
+ * Stacks Clarity Compiler/Checker Service (Backend-powered)
  */
 export class ClarityCompiler {
     static async check(
@@ -10,69 +9,36 @@ export class ClarityCompiler {
         contractName: string
     ): Promise<CompilationResult> {
         try {
-            console.log(`Checking Clarity contract: ${contractName} locally...`);
+            console.log(`[Compiler] Checking ${contractName} via backend...`);
 
-            const simnet = await getSimnet();
+            const response = await fetch('/api/clarity/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, name: contractName })
+            });
 
-            // In Clarinet SDK, deploying a contract acts as a check.
-            // We use a dummy address for checking
-            const deployer = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
-
-            try {
-                // For a "check", we can just try to deploy it. 
-                // If it's already there, we might need to handle that, 
-                // but usually for an IDE we want to re-validate.
-                // Simnet allows multiple deployments or we can use a unique name.
-                const checkName = `${contractName.replace(/\.clar$/, '')}_check_${Date.now()}`;
-
-                // deployContract returns the contract interface if successful, or throws if not.
-                simnet.deployContract(checkName, code, deployer);
-
-                const entryPoints = this.extractEntryPoints(code);
-                return {
-                    success: true,
-                    warnings: [],
-                    metadata: {
-                        entryPoints,
-                        contractType: 'clarity'
-                    }
-                };
-            } catch (error: any) {
-                return {
-                    success: false,
-                    errors: [error.message || 'Validation failed']
-                };
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.errors?.[0] || 'Verification failed');
             }
+
+            const result = await response.json();
+            return {
+                success: result.success,
+                warnings: [],
+                metadata: result.metadata || {
+                    entryPoints: this.extractEntryPoints(code),
+                    contractType: 'clarity'
+                },
+                errors: result.errors || []
+            };
         } catch (error: any) {
-            console.error('Clarity local check error:', error);
-            return this.checkLocalFallback(code, contractName);
+            console.error('[Compiler] Backend error:', error);
+            return {
+                success: false,
+                errors: [error.message || 'Validation failed']
+            };
         }
-    }
-
-    private static checkLocalFallback(code: string, contractName: string): CompilationResult {
-        const errors: string[] = [];
-
-        // Very basic Lisp-style parenthesis matching
-        const openParens = (code.match(/\(/g) || []).length;
-        const closeParens = (code.match(/\)/g) || []).length;
-
-        if (openParens !== closeParens) {
-            errors.push(`Parenthesis mismatch: ${openParens} open vs ${closeParens} closed.`);
-        }
-
-        if (errors.length > 0) {
-            return { success: false, errors };
-        }
-
-        const entryPoints = this.extractEntryPoints(code);
-        return {
-            success: true,
-            warnings: ['Offline check: limited validation available'],
-            metadata: {
-                entryPoints,
-                contractType: 'clarity'
-            }
-        };
     }
 
     private static extractEntryPoints(code: string): EntryPoint[] {
@@ -100,7 +66,7 @@ export class ClarityCompiler {
                 name,
                 args,
                 access: 'Public',
-                ret: 'response' // Clarity public functions siempre devuelven un response
+                ret: 'response'
             });
         }
 
@@ -122,7 +88,7 @@ export class ClarityCompiler {
             entryPoints.push({
                 name,
                 args,
-                access: 'Public', // Read-only is public in access terms
+                access: 'Public',
                 ret: 'any'
             });
         }

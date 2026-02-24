@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FileNode, ActivityView, TerminalLine, ProjectSettings, GitState, GitCommit, Problem, WalletConnection, CompilationResult, DeployedContract } from './types';
 import { INITIAL_FILES, DEFAULT_SETTINGS } from './constants';
 import ActivityBar from './components/Layout/ActivityBar';
@@ -11,24 +11,47 @@ import CodeEditor from './components/Editor/CodeEditor';
 import EditorTabs from './components/Layout/EditorTabs';
 import Header from './components/Layout/Header';
 import { Button } from './components/UI/Button';
-import { PlayIcon, BotIcon, RocketIcon, BugIcon } from './components/UI/Icons';
+import { PlayIcon, BotIcon, RocketIcon, BugIcon, UndoIcon, RedoIcon, SaveIcon, EyeIcon, SearchIcon } from './components/UI/Icons';
 import { DeploymentNotification } from './components/UI/DeploymentNotification';
 import HomeTab from './components/UI/HomeTab';
+import AbiPreviewTab from './components/UI/AbiPreviewTab';
+import MarkdownPreviewTab from './components/UI/MarkdownPreviewTab';
 import { ClarityCompiler } from './services/stacks/compiler';
 import { StacksWalletService } from './services/stacks/wallet';
 import JSZip from 'jszip';
 
 function App() {
-    const [activeView, setActiveView] = useState<ActivityView>(ActivityView.EXPLORER);
+    const [activeView, setActiveView] = useState<ActivityView>(() => {
+        const saved = localStorage.getItem('labstx_active_view');
+        return (saved as ActivityView) || ActivityView.EXPLORER;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_active_view', activeView);
+    }, [activeView]);
 
     // Theme State
     const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
-    // Workspace State
-    const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>({
-        'default_workspace': INITIAL_FILES
+    // Workspace State with localStorage persistence
+    const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>(() => {
+        const saved = localStorage.getItem('labstx_workspaces');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return { 'default_workspace': INITIAL_FILES }; }
+        }
+        return { 'default_workspace': INITIAL_FILES };
     });
-    const [activeWorkspace, setActiveWorkspace] = useState('default_workspace');
+    const [activeWorkspace, setActiveWorkspace] = useState(() => {
+        return localStorage.getItem('labstx_active_workspace') || 'default_workspace';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_workspaces', JSON.stringify(workspaces));
+    }, [workspaces]);
+
+    useEffect(() => {
+        localStorage.setItem('labstx_active_workspace', activeWorkspace);
+    }, [activeWorkspace]);
 
     // History State
     const [history, setHistory] = useState<FileNode[][]>([INITIAL_FILES]);
@@ -37,9 +60,25 @@ function App() {
     // Derived state for current file tree
     const files = history[historyIndex];
 
-    // Editor Tabs State
-    const [openFiles, setOpenFiles] = useState<string[]>(['@home', 'Clarinet.toml', 'simple-counter.clar']);
-    const [activeFileId, setActiveFileId] = useState<string | null>('@home');
+    // Editor Tabs State with persistence
+    const [openFiles, setOpenFiles] = useState<string[]>(() => {
+        const saved = localStorage.getItem('labstx_open_files');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return ['@home', 'Clarinet.toml', 'simple-counter.clar']; }
+        }
+        return ['@home', 'Clarinet.toml', 'simple-counter.clar'];
+    });
+    const [activeFileId, setActiveFileId] = useState<string | null>(() => {
+        return localStorage.getItem('labstx_active_file_id') || '@home';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_open_files', JSON.stringify(openFiles));
+    }, [openFiles]);
+
+    useEffect(() => {
+        localStorage.setItem('labstx_active_file_id', activeFileId || '');
+    }, [activeFileId]);
 
     const [activeContent, setActiveContent] = useState<string>('');
     const [activeLanguage, setActiveLanguage] = useState<string>('clarity');
@@ -63,8 +102,40 @@ function App() {
     // Deployment Notification State
     const [notification, setNotification] = useState<{ deployHash: string; network: string, contractName?: string } | null>(null);
 
-    // Project Settings
-    const [settings, setSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS);
+    // Project Settings with localStorage persistence
+    const [settings, setSettings] = useState<ProjectSettings>(() => {
+        const saved = localStorage.getItem('labstx_settings');
+        if (saved) {
+            try {
+                return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+            } catch (e) {
+                return DEFAULT_SETTINGS;
+            }
+        }
+        return DEFAULT_SETTINGS;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_settings', JSON.stringify(settings));
+    }, [settings]);
+
+    // Editing State
+    const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([]);
+    const [editorAction, setEditorAction] = useState<{ type: 'undo' | 'redo' | 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number }>({ type: null, timestamp: 0 });
+
+    // Search-in-code state (synced to Monaco's find widget)
+    const [editorSearchQuery, setEditorSearchQuery] = useState<string>('');
+    const [searchFindQuery, setSearchFindQuery] = useState<string | undefined>(undefined);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Debounce the find query passed to the editor (avoids firing on every keystroke)
+    const handleSearchChange = useCallback((value: string) => {
+        setEditorSearchQuery(value);
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(() => {
+            setSearchFindQuery(value);
+        }, 200);
+    }, []);
 
     // Git State
     const [gitState, setGitState] = useState<GitState>({
@@ -72,17 +143,17 @@ function App() {
         stagedFiles: [],
         commits: [
             // Simulated History
-            { id: 'c-5', message: 'Merge branch feature/auth', date: Date.now() - 1000000, hash: '8f2a1b', branch: 'main', parents: ['c-4', 'c-3'] },
-            { id: 'c-4', message: 'Update configuration', date: Date.now() - 2000000, hash: '7e1c9d', branch: 'main', parents: ['c-2'] },
-            { id: 'c-3', message: 'Implement login logic', date: Date.now() - 2500000, hash: '6d4e5f', branch: 'feature/auth', parents: ['c-1'] },
-            { id: 'c-2', message: 'Fix typo in README', date: Date.now() - 3000000, hash: '5c3b2a', branch: 'main', parents: ['c-1'] },
-            { id: 'c-1', message: 'Initial Commit', date: Date.now() - 4000000, hash: '4b2a1c', branch: 'main', parents: [] },
+            { id: 'c-5', message: 'Merge branch feature/staking', date: Date.now() - 3600000, hash: '8f2a1b', branch: 'main', parents: ['c-4', 'c-3'] },
+            { id: 'c-4', message: 'Update project configuration', date: Date.now() - 7200000, hash: '7e1c9d', branch: 'main', parents: ['c-2'] },
+            { id: 'c-3', message: 'Implement staking contract logic', date: Date.now() - 86400000, hash: '6d4e5f', branch: 'feature/staking', parents: ['c-1'] },
+            { id: 'c-2', message: 'Refactor utility functions', date: Date.now() - 172800000, hash: '5c3b2a', branch: 'main', parents: ['c-1'] },
+            { id: 'c-1', message: 'Initial commit ✨', date: Date.now() - 259200000, hash: '4b2a1c', branch: 'main', parents: [] },
         ],
         branch: 'main'
     });
 
     // Layout State
-    const [leftWidth, setLeftWidth] = useState(260);
+    const [leftWidth, setLeftWidth] = useState(300);
     const [rightWidth, setRightWidth] = useState(320);
     const [terminalHeight, setTerminalHeight] = useState(200);
     const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(true);
@@ -93,6 +164,20 @@ function App() {
     const toggleLeftSidebar = () => setIsLeftSidebarVisible(!isLeftSidebarVisible);
     const toggleRightSidebar = () => setIsRightSidebarVisible(!isRightSidebarVisible);
     const toggleTerminal = () => setIsTerminalVisible(!isTerminalVisible);
+
+    // Prevent data loss on reload
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (gitState.modifiedFiles.length > 0 || gitState.stagedFiles.length > 0) {
+                e.preventDefault();
+                e.returnValue = 'You have unsaved changes in the code editor. Are you sure you want to leave?';
+                return e.returnValue;
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [gitState.modifiedFiles, gitState.stagedFiles]);
 
     // Resizing Logic
     const startResizing = useCallback((direction: 'left' | 'right') => (mouseDownEvent: React.MouseEvent) => {
@@ -169,6 +254,33 @@ function App() {
             }
         }
         return null;
+    };
+
+    // Recursively find file by name
+    const findFileByName = (nodes: FileNode[], name: string): FileNode | null => {
+        for (const node of nodes) {
+            if (node.type === 'file' && node.name === name) return node;
+            if (node.children) {
+                const found = findFileByName(node.children, name);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
+    // Navigate the editor to a specific file + line/column (used by Problems "Locate")
+    const handleLocateProblem = (fileName: string, line: number, column: number) => {
+        const target = findFileByName(files, fileName);
+        if (!target) return;
+        // Open & activate the file tab
+        if (!openFiles.includes(target.id)) {
+            setOpenFiles(prev => [...prev, target.id]);
+        }
+        setActiveFileId(target.id);
+        // Slight delay so Monaco mounts the new file before we jump
+        setTimeout(() => {
+            setEditorAction({ type: 'gotoLine', timestamp: Date.now(), line, column });
+        }, 80);
     };
 
     // Helper to get all descendant IDs of a node (including itself)
@@ -518,14 +630,35 @@ function App() {
             return newHist;
         });
 
-        // Update Git modified status
+        // Mark as dirty (unsaved)
+        if (!dirtyFileIds.includes(activeFileId)) {
+            setDirtyFileIds(prev => [...prev, activeFileId]);
+        }
+    };
+
+    const handleSaveFile = () => {
+        if (!activeFileId || !dirtyFileIds.includes(activeFileId)) return;
+
+        // Move from dirty to git modified
+        setDirtyFileIds(prev => prev.filter(id => id !== activeFileId));
         setGitState(prev => {
             if (!prev.modifiedFiles.includes(activeFileId) && !prev.stagedFiles.includes(activeFileId)) {
                 return { ...prev, modifiedFiles: [...prev.modifiedFiles, activeFileId] };
             }
             return prev;
         });
+
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'success', content: `Saved: ${findFile(files, activeFileId)?.name}` }
+        ]);
+
+        // Trigger save effect in editor if needed
+        setEditorAction({ type: 'save', timestamp: Date.now() });
     };
+
+    const handleEditorUndo = () => setEditorAction({ type: 'undo', timestamp: Date.now() });
+    const handleEditorRedo = () => setEditorAction({ type: 'redo', timestamp: Date.now() });
 
     const handleCompile = async () => {
         if (!activeFileId) return;
@@ -537,13 +670,13 @@ function App() {
 
         setTerminalLines(prev => [
             ...prev,
-            { id: Date.now().toString(), type: 'command', content: `Checking Clarity contract: ${fileName}...` },
+            { id: Date.now().toString(), type: 'command', content: `Running clarinet check: ${fileName}...` },
         ]);
 
         setOutputLines([
-            `> Validating Clarity code: ${fileName}...`,
-            `> Clarity Version: ${settings.clarityVersion || '2.0'}`,
-            `> Checking for syntax errors...`
+            `> Executing: clarinet check ${fileName}`,
+            `> Using Clarinet CLI version 3.4.0`,
+            `> Analyzing contract for syntax and logic errors...`
         ]);
 
         setProblems([]);
@@ -563,15 +696,17 @@ function App() {
             if (result.success) {
                 setTerminalLines(prev => [
                     ...prev,
-                    { id: Date.now().toString(), type: 'success', content: 'Clarity validation successful!' },
+                    { id: Date.now().toString(), type: 'success', content: 'Clarinet Check successful!' },
                 ]);
 
+                // Print the full raw log from the CLI
+                const logLines = result.output ? result.output.split('\n') : ['Analysis completed.'];
                 setOutputLines(prev => [
                     ...prev,
-                    `> Analysis completed successfully.`,
                     `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `> ✨ Contract is valid and ready for deployment.`,
-                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+                    ...logLines.map((l: string) => `  ${l}`),
+                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `> ✨ Contract is valid according to Clarinet.`
                 ]);
 
                 if (result.metadata?.entryPoints) {
@@ -580,9 +715,17 @@ function App() {
             } else {
                 setTerminalLines(prev => [
                     ...prev,
-                    { id: Date.now().toString(), type: 'error', content: 'Validation failed. See Output and Problems for details.' },
+                    { id: Date.now().toString(), type: 'error', content: 'Clarinet Check failed. See Output and Problems for details.' },
                 ]);
-                setOutputLines(prev => [...prev, `Error: Validation failed.`, ...(result.errors || []).map(e => `  - ${e}`)]);
+
+                const logLines = result.output ? result.output.split('\n') : ['Analysis failed.'];
+                setOutputLines(prev => [
+                    ...prev,
+                    `Error: Clarinet Check failed.`,
+                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    ...logLines.map((l: string) => `  ${l}`),
+                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+                ]);
 
                 if (result.errors) {
                     const fileProblems: Problem[] = result.errors.map((error, idx) => ({
@@ -637,6 +780,78 @@ function App() {
         ]);
     };
 
+    const handleTerminalCommand = async (command: string) => {
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'command', content: command },
+        ]);
+
+        if (command.toLowerCase() === 'clear') {
+            handleClearTerminal();
+            return;
+        }
+
+        if (!command.startsWith('clarinet')) {
+            setTerminalLines(prev => [
+                ...prev,
+                { id: Date.now().toString(), type: 'error', content: 'Only clarinet commands are allowed in this terminal.' },
+            ]);
+            return;
+        }
+
+        try {
+            // We use the same 'activeContract' context if available
+            let contractContext = null;
+            if (activeFileId) {
+                const file = findFile(files, activeFileId);
+                if (file && file.type === 'file' && file.name.endsWith('.clar')) {
+                    contractContext = { name: file.name, code: activeContent };
+                }
+            }
+
+            // If we have a contract, ensure it's "deployed" to the backend session first
+            if (contractContext) {
+                await fetch('/api/clarity/deploy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(contractContext)
+                });
+            }
+
+            const response = await fetch('/api/clarity/terminal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command })
+            });
+
+            const result = await response.json();
+
+            if (result.output) {
+                const outputLines = result.output.split('\n');
+                outputLines.forEach((line: string) => {
+                    if (line.trim()) {
+                        setTerminalLines(prev => [
+                            ...prev,
+                            { id: Date.now().toString() + Math.random(), type: 'info', content: line },
+                        ]);
+                    }
+                });
+            }
+
+            if (!result.success && !result.output) {
+                setTerminalLines(prev => [
+                    ...prev,
+                    { id: Date.now().toString(), type: 'error', content: 'Command failed.' },
+                ]);
+            }
+        } catch (error: any) {
+            setTerminalLines(prev => [
+                ...prev,
+                { id: Date.now().toString(), type: 'error', content: `Execution error: ${error.message}` },
+            ]);
+        }
+    };
+
     // --- Git Operations ---
 
     const handleStageFile = (id: string) => {
@@ -681,10 +896,38 @@ function App() {
         ]);
     };
 
+    const handleDiscardFile = (id: string) => {
+        setGitState(prev => ({
+            ...prev,
+            modifiedFiles: prev.modifiedFiles.filter(f => f !== id),
+            stagedFiles: prev.stagedFiles.filter(f => f !== id)
+        }));
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'info', content: `Discarded changes in ${id}` }
+        ]);
+    };
+
+    const handleSwitchBranch = (branchName: string) => {
+        setGitState(prev => ({ ...prev, branch: branchName }));
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'info', content: `Switched to branch: ${branchName}` }
+        ]);
+    };
+
+    const handleCreateBranch = (branchName: string) => {
+        setGitState(prev => ({ ...prev, branch: branchName }));
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'success', content: `Created and switched to branch: ${branchName}` }
+        ]);
+    };
+
     const handlePush = () => {
         setTerminalLines(prev => [
             ...prev,
-            { id: Date.now().toString(), type: 'info', content: 'Pushing to origin/main...' }
+            { id: Date.now().toString(), type: 'info', content: `Pushing to origin/${gitState.branch}...` }
         ]);
         setTimeout(() => {
             setTerminalLines(prev => [
@@ -962,6 +1205,31 @@ function App() {
         setActiveFileId('@home');
     };
 
+    const handleOpenPreview = () => {
+        if (!activeFileId) return;
+        const file = findFile(files, activeFileId);
+        if (!file) return;
+        const isMd = file.name.endsWith('.md') || file.name.endsWith('.mdx') || file.name.endsWith('.markdown');
+        const isClar = file.name.endsWith('.clar') || file.name.endsWith('.clarity');
+        if (!isMd && !isClar) return;
+        const tabId = isMd ? `@md-${activeFileId}` : `@abi-${activeFileId}`;
+        if (!openFiles.includes(tabId)) {
+            setOpenFiles(prev => [...prev, tabId]);
+        }
+        setActiveFileId(tabId);
+    };
+
+    // Determines if the Preview button should be enabled
+    const previewableFile = (() => {
+        if (!activeFileId || activeFileId === '@home') return null;
+        if (activeFileId.startsWith('@abi-') || activeFileId.startsWith('@md-')) return null;
+        const f = findFile(files, activeFileId);
+        if (!f) return null;
+        const isMd = f.name.endsWith('.md') || f.name.endsWith('.mdx') || f.name.endsWith('.markdown');
+        const isClar = f.name.endsWith('.clar') || f.name.endsWith('.clarity');
+        return (isMd || isClar) ? f : null;
+    })();
+
     return (
         <div className="h-screen w-screen flex flex-col bg-caspier-black text-caspier-text overflow-hidden font-sans">
 
@@ -1017,8 +1285,11 @@ function App() {
                             gitState={gitState}
                             onStageFile={handleStageFile}
                             onUnstageFile={handleUnstageFile}
+                            onDiscardFile={handleDiscardFile}
                             onCommit={handleCommit}
                             onPush={handlePush}
+                            onSwitchBranch={handleSwitchBranch}
+                            onCreateBranch={handleCreateBranch}
                             wallet={wallet}
                             onWalletConnect={handleWalletConnect}
                             onWalletDisconnect={handleWalletDisconnect}
@@ -1048,29 +1319,71 @@ function App() {
                         onCloseAll={handleCloseAll}
                         onReorder={setOpenFiles}
                         modifiedFileIds={gitState.modifiedFiles}
+                        dirtyFileIds={dirtyFileIds}
                     />
 
-                    <div className="h-9 flex items-center bg-caspier-black border-b border-caspier-border px-4 justify-between flex-shrink-0">
-                        <div className="flex items-center text-sm">
+                    <div className="h-9 flex items-center bg-caspier-black border-b border-caspier-border px-4 flex-shrink-0">
+                        <div className="flex w-full items-center text-sm">
                             <span className="text-caspier-muted text-xs mr-2">{activeFileId ? findFile(files, activeFileId)?.name : ''}</span>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        {/* Inline Search Box */}
+                        <div className="flex items-center relative mr-2">
+                            <SearchIcon className="absolute left-2 w-3 h-3 text-caspier-muted pointer-events-none" />
+                            <input
+                                type="text"
+                                id="editor-search-input"
+                                value={editorSearchQuery}
+                                onChange={e => handleSearchChange(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Escape') handleSearchChange('');
+                                }}
+                                placeholder="Find in code…"
+                                className="h-6 pl-6 pr-6 text-xs rounded bg-caspier-dark border border-caspier-border text-caspier-text placeholder-caspier-muted focus:outline-none focus:border-caspier-red transition-all w-32 focus:w-48"
+                                style={{ transition: 'width 0.2s ease' }}
+                                title="Find in editor (Ctrl+F)"
+                            />
+                            {editorSearchQuery && (
+                                <button
+                                    onClick={() => handleSearchChange('')}
+                                    className="absolute right-1.5 text-caspier-muted hover:text-caspier-text leading-none text-base"
+                                    title="Clear search"
+                                >×</button>
+                            )}
+                        </div>
+
+                        <div className="flex w-auto items-center gap-2">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={handleOpenPreview}
+                                disabled={!previewableFile}
+                                className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={previewableFile
+                                    ? previewableFile.name.endsWith('.md') || previewableFile.name.endsWith('.mdx') || previewableFile.name.endsWith('.markdown')
+                                        ? 'Markdown Preview'
+                                        : 'ABI Contract Specification'
+                                    : 'Open a .clar or .md file to preview'
+                                }
+                            >
+                                <EyeIcon className="w-3 h-3" />
+                                <span>Preview</span>
+                            </Button>
                             <Button
                                 variant="primary"
                                 size="sm"
                                 onClick={handleCompile}
-                                className="flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                                title="Compile (F5)"
+                                className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                title="Run Clarinet Check (F5)"
                             >
                                 <PlayIcon className="w-3 h-3" />
-                                <span>Compile</span>
+                                <span>Check</span>
                             </Button>
                             <Button
                                 variant="secondary"
                                 size="sm"
                                 onClick={handleDebug}
-                                className="flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                className="rounded-full  flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
                                 title="Debug Clarity"
                             >
                                 <BugIcon className="w-3 h-3" />
@@ -1080,24 +1393,50 @@ function App() {
                                 variant="primary"
                                 size="sm"
                                 onClick={handleDeployView}
-                                className="flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                className="rounded-full  flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
                             >
                                 <RocketIcon className="w-3 h-3" />
                                 <span>Deploy</span>
                             </Button>
-                            {!isRightSidebarVisible && (
-                                <button
-                                    onClick={toggleRightSidebar}
-                                    className="text-caspier-muted hover:text-caspier-text p-1 ml-2 border border-transparent hover:border-caspier-border rounded"
-                                    title="Open AI Assistant"
-                                >
-                                    <BotIcon className="w-4 h-4" />
-                                </button>
-                            )}
+                            <button
+                                onClick={toggleRightSidebar}
+                                className="text-caspier-muted hover:text-caspier-text p-1 ml-2 border border-transparent hover:border-caspier-border rounded"
+                                title="Open AI Assistant"
+                            >
+                                <BotIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex w-fit items-center gap-1.5 px-2 border-l border-caspier-border ml-2">
+                            <button
+                                onClick={handleEditorUndo}
+                                className="p-1.5 text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover rounded transition-colors"
+                                title="Undo (Ctrl+Z)"
+                            >
+                                <UndoIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={handleEditorRedo}
+                                className="p-1.5 text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover rounded transition-colors"
+                                title="Redo (Ctrl+Y)"
+                            >
+                                <RedoIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={handleSaveFile}
+                                disabled={!activeFileId || !dirtyFileIds.includes(activeFileId)}
+                                className={`p-1.5 rounded transition-all ${activeFileId && dirtyFileIds.includes(activeFileId)
+                                    ? 'text-labstx-orange hover:bg-labstx-orange/10 bg-labstx-orange/5'
+                                    : 'text-caspier-muted opacity-50 cursor-not-allowed'
+                                    }`}
+                                title="Save File (Ctrl+S)"
+                            >
+                                <SaveIcon className="w-3.5 h-3.5" />
+                            </button>
                         </div>
                     </div>
 
-                    {/* Monaco Editor or Home Tab */}
+                    {/* Monaco Editor or Home Tab or ABI Preview */}
                     <div className="flex-1 relative min-h-0">
                         {activeFileId === '@home' ? (
                             <HomeTab
@@ -1113,13 +1452,36 @@ function App() {
                                 }}
                                 theme={theme}
                             />
-                        ) : (
+                        ) : activeFileId?.startsWith('@abi-') ? (() => {
+                            const srcFileId = activeFileId.replace(/^@abi-/, '');
+                            const srcFile = findFile(files, srcFileId);
+                            return (
+                                <AbiPreviewTab
+                                    code={srcFile?.content || ''}
+                                    fileName={srcFile?.name || 'contract.clar'}
+                                    theme={theme}
+                                />
+                            );
+                        })() : activeFileId?.startsWith('@md-') ? (() => {
+                            const srcFileId = activeFileId.replace(/^@md-/, '');
+                            const srcFile = findFile(files, srcFileId);
+                            return (
+                                <MarkdownPreviewTab
+                                    content={srcFile?.content || ''}
+                                    fileName={srcFile?.name || 'document.md'}
+                                    theme={theme}
+                                />
+                            );
+                        })() : (
                             <CodeEditor
                                 code={activeContent}
                                 language={activeLanguage}
                                 onChange={handleEditorChange}
                                 settings={settings}
                                 theme={theme}
+                                action={editorAction}
+                                onSave={handleSaveFile}
+                                findQuery={searchFindQuery}
                             />
                         )}
                     </div>
@@ -1138,6 +1500,8 @@ function App() {
                                 height={terminalHeight}
                                 theme={theme}
                                 onClearTerminal={handleClearTerminal}
+                                onCommand={handleTerminalCommand}
+                                onLocateProblem={handleLocateProblem}
                             />
                         </>
                     )}

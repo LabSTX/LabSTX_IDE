@@ -172,6 +172,13 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
     setDeploying(true);
 
+    if (onAddTerminalLine) {
+      onAddTerminalLine({
+        type: 'command',
+        content: `Broadcasting contract deployment: ${contractName} on ${network}...`
+      });
+    }
+
     try {
       const stxNetwork = network === 'mainnet'
         ? STACKS_MAINNET
@@ -189,6 +196,13 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         },
         onFinish: (data: any) => {
           console.log('Stacks Transaction broadcast:', data);
+
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'success',
+              content: `Contract deployment broadcasted! TXID: ${data.txId.substring(0, 16)}...`
+            });
+          }
 
           const newContract: DeployedContract = {
             id: Date.now().toString(),
@@ -210,6 +224,12 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         },
         onCancel: () => {
           console.log('Deployment cancelled');
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'info',
+              content: 'Deployment cancelled by user.'
+            });
+          }
           setDeploying(false);
         }
       };
@@ -228,6 +248,12 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
     } catch (error: any) {
       console.error('Deployment error:', error);
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'error',
+          content: `Deployment failed: ${error.message}`
+        });
+      }
       setDeploying(false);
     }
   };
@@ -293,6 +319,16 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
       const stxNetwork = network === 'mainnet' ? STACKS_MAINNET : network === 'testnet' ? STACKS_TESTNET : STACKS_MOCKNET;
 
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'command',
+          content: `Broadcasting contract call: ${interactContractHash}::${entryPoint}...`,
+          data: {
+            args: argumentsJson
+          }
+        });
+      }
+
       await openContractCall({
         contractAddress: contractAddress.trim(),
         contractName: contractName.trim(),
@@ -305,11 +341,31 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         },
         onFinish: (data) => {
           console.log('Contract call broadcast:', data);
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'success',
+              content: `Contract call broadcasted! TXID: ${data.txId.substring(0, 16)}...`
+            });
+          }
         },
-        onCancel: () => console.log('Call cancelled')
+        onCancel: () => {
+          console.log('Call cancelled');
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'info',
+              content: 'Contract call cancelled by user.'
+            });
+          }
+        }
       });
     } catch (err: any) {
       alert(`Interaction Error: ${err.message}`);
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'error',
+          content: `Contract call failed: ${err.message}`
+        });
+      }
     }
   };
 
@@ -494,7 +550,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
           {/* Code Preview */}
           {selectedFileId && clarityFiles.find(f => f.id === selectedFileId) && (
-            <div className="mt-3 bg-caspier-black border border-caspier-border rounded overflow-hidden shadow-lg">
+            <div className="mt-3 bg-caspier-black border border-caspier-border rounded overflow-hidden ">
               <div className="px-2.5 py-1.5 border-b border-caspier-border flex justify-between items-center bg-caspier-dark/40">
                 <span className="text-[9px] text-caspier-muted uppercase font-black tracking-widest">Contract Preview</span>
                 <span className="text-[9px] text-labstx-orange font-mono">.clar</span>
@@ -722,7 +778,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
                               key={f.name}
                               onClick={() => setEntryPoint(f.name)}
                               className={`px-2 py-1 text-[10px] font-mono border rounded transition-all ${entryPoint === f.name
-                                ? 'bg-labstx-orange text-black border-labstx-orange'
+                                ? 'bg-labstx-orange text-white border-labstx-orange'
                                 : 'bg-caspier-black text-caspier-text border-caspier-border hover:border-labstx-orange'
                                 }`}
                             >
@@ -786,7 +842,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             <div className="space-y-2">
               <Button
                 onClick={handleCallContract}
-                className="w-full text-[10px] font-black uppercase tracking-widest py-2.5 bg-labstx-orange text-black border-labstx-orange shadow-neobrutal-sm active:shadow-none translate-x-[-1px] translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px]"
+                className="w-full text-[10px] font-black uppercase tracking-widest py-2.5 bg-labstx-orange text-white border-labstx-orange hover:shadow-neobrutal-sm active:shadow-none translate-x-[-1px] translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px]"
                 variant="primary"
               >
                 Call Contract

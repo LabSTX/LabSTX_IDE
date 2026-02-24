@@ -1,9 +1,8 @@
 
 import React from 'react';
-import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon } from '../UI/Icons';
+import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon, BugIcon } from '../UI/Icons';
 import { GitHubAuth } from '../GitHub/GitHubAuth';
 import { PublicCloneModal } from '../GitHub/PublicCloneModal';
-import logo from '../../logo.svg';
 
 interface HeaderProps {
   currentWorkspace: string;
@@ -66,6 +65,8 @@ const Header: React.FC<HeaderProps> = ({
             />
           )}
           LabSTX
+
+          <p className='text-blue-600'> IDE</p>
         </div>
 
         {/* Separator */}
@@ -127,14 +128,16 @@ const Header: React.FC<HeaderProps> = ({
               const modal = document.getElementById('public-clone-modal');
               if (modal) modal.style.display = 'flex';
             }}
-            className="bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-labstx-orange hover:border-labstx-orange transition-all p-1.5 rounded-sm active:translate-y-[1px] ml-1"
+            className="group relative bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-labstx-orange hover:border-labstx-orange transition-all p-1.5 rounded-sm active:translate-y-[1px] ml-1 shadow-sm"
             title="Clone GitHub Repository"
           >
-            <GithubIcon className="w-4 h-4" />
+            <div className="absolute inset-0 bg-labstx-orange/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm" />
+            <GithubIcon className="w-4 h-4 relative z-10" />
           </button>
         </div>
       </div>
 
+      <p className='flex items-center gap-x-1 text-emerald-600 border border-emerald-600 rounded-full px-2 py-1 text-xs font-bold'><BugIcon className='w-4 h-4' /> BETA</p>
       {/* Right Side - Links/Placeholders */}
       <div className="flex items-center gap-4 text-xs text-caspier-muted font-medium">
         {/* Layout Toggles */}

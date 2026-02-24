@@ -14,7 +14,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
   const items = [
     { view: ActivityView.EXPLORER, icon: FileIcon, label: 'Explorer' },
     { view: ActivityView.SEARCH, icon: SearchIcon, label: 'Search' },
-    // { view: ActivityView.GIT, icon: GitIcon, label: 'Source Control' },
+    //{ view: ActivityView.GIT, icon: GitIcon, label: 'Source Control' },
     { view: ActivityView.DEPLOY, icon: RocketIcon, label: 'Deploy & Run' },
     { view: ActivityView.DEBUG, icon: BugIcon, label: 'Debug' },
   ];

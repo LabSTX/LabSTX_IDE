@@ -5,7 +5,7 @@ import { FileNode, ActivityView, ProjectSettings, GitState, GitCommit, WalletCon
 import {
     FolderIcon, FileIcon, ChevronRightIcon, ChevronDownIcon,
     FilePlusIcon, FolderPlusIcon, EditIcon, TrashIcon, CheckIcon, XIcon,
-    UndoIcon, RedoIcon, SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon
+    UndoIcon, RedoIcon, SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon, GitBranchIcon, GitCommitIcon
 } from '../UI/Icons';
 import { Button } from '../UI/Button';
 import DeployPanel from '../Deploy/DeployPanel';
@@ -30,8 +30,11 @@ interface SidebarLeftProps {
     gitState?: GitState;
     onStageFile?: (id: string) => void;
     onUnstageFile?: (id: string) => void;
+    onDiscardFile?: (id: string) => void;
     onCommit?: (message: string) => void;
     onPush?: () => void;
+    onSwitchBranch?: (branchName: string) => void;
+    onCreateBranch?: (branchName: string) => void;
     wallet?: WalletConnection;
     onWalletConnect?: (wallet: WalletConnection) => void;
     onWalletDisconnect?: () => void;
@@ -307,7 +310,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     onCreateNode, onRenameNode, onDeleteNode, width,
     onUndo, onRedo, canUndo, canRedo,
     settings, onUpdateSettings,
-    gitState, onStageFile, onUnstageFile, onCommit, onPush,
+    gitState, onStageFile, onUnstageFile, onDiscardFile, onCommit, onPush, onSwitchBranch, onCreateBranch,
     wallet, onWalletConnect, onWalletDisconnect, compilationResult, onDeploySuccess,
     onLoadTemplate, theme, onAddTerminalLine
 }) => {
@@ -602,13 +605,26 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         const getColor = (lane: number) => branchColors[lane % branchColors.length];
 
         return (
-            <div className="flex flex-col h-full">
-                <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
-                    <span className="text-xs font-bold text-caspier-text tracking-wider">SOURCE CONTROL</span>
-                    <div className="flex gap-2">
+            <div className="flex flex-col h-full bg-caspier-dark">
+                <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black/50 backdrop-blur-sm sticky top-0 z-20">
+                    <div className="flex flex-col overflow-hidden">
+                        <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase leading-none mb-1">Source Control</span>
+                        <div className="flex items-center gap-1.5 group cursor-pointer" onClick={() => {
+                            const newBranch = window.prompt('Switch/Create branch:', gitState.branch);
+                            if (newBranch && newBranch !== gitState.branch) {
+                                if (branches.includes(newBranch)) onSwitchBranch?.(newBranch);
+                                else onCreateBranch?.(newBranch);
+                            }
+                        }}>
+                            <GitBranchIcon className="w-3.5 h-3.5 text-labstx-orange" />
+                            <span className="text-xs font-black text-caspier-text truncate group-hover:text-labstx-orange transition-colors uppercase tracking-tight">{gitState.branch}</span>
+                            <ChevronDownIcon className="w-3 h-3 text-caspier-muted opacity-0 group-hover:opacity-100 transition-all" />
+                        </div>
+                    </div>
+                    <div className="flex gap-1">
                         <button
-                            className={`p-1 text-caspier-muted hover:text-caspier-text ${isPushing ? 'animate-spin text-caspier-red' : ''}`}
-                            title="Push Changes"
+                            className={`p-1.5 rounded-md hover:bg-caspier-hover text-caspier-muted hover:text-caspier-text transition-all ${isPushing ? 'animate-spin text-labstx-orange' : ''}`}
+                            title="Sync / Push Changes"
                             onClick={handlePushClick}
                         >
                             <RefreshIcon className="w-4 h-4" />
@@ -619,10 +635,10 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
 
                     {/* Commit Input */}
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2.5 p-1 bg-caspier-black/30 rounded-lg border border-caspier-border0">
                         <textarea
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text p-2 text-sm focus:border-caspier-red outline-none resize-none h-20"
-                            placeholder="Message (Enter to commit)"
+                            className="w-full bg-caspier-black/50 border border-caspier-border/30 text-caspier-text p-2.5 text-[11px] font-medium focus:border-labstx-orange/50 focus:ring-1 focus:ring-labstx-orange/20 outline-none resize-none h-20 rounded-md placeholder:text-caspier-muted transition-all"
+                            placeholder="Commit message..."
                             value={commitMessage}
                             onChange={(e) => setCommitMessage(e.target.value)}
                             onKeyDown={(e) => {
@@ -632,38 +648,42 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                 }
                             }}
                         />
-                        <Button
-                            size="sm"
+                        <button
                             onClick={handleCommitSubmit}
-                            disabled={gitState.stagedFiles.length === 0}
-                            className={gitState.stagedFiles.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+                            disabled={gitState.stagedFiles.length === 0 || !commitMessage.trim()}
+                            className={`flex items-center justify-center gap-2 py-1.5 px-4 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${(gitState.stagedFiles.length === 0 || !commitMessage.trim())
+                                ? 'bg-caspier-border/30 text-caspier-muted cursor-not-allowed opacity-50'
+                                : 'bg-labstx-orange text-white hover:bg-labstx-orange/90 shadow-[0_2px_10px_-3px_rgba(255,107,0,0.4)] active:scale-95'
+                                }`}
                         >
+                            <GitCommitIcon className="w-3.5 h-3.5" />
                             Commit
-                        </Button>
+                        </button>
                     </div>
 
                     {/* Staged Changes */}
                     <div>
-                        <div className="flex items-center justify-between text-xs font-bold text-caspier-muted mb-2 uppercase">
-                            <span>Staged Changes ({gitState.stagedFiles.length})</span>
+                        <div className="flex items-center justify-between text-[10px] font-black text-caspier-muted mb-2 uppercase tracking-widest px-1">
+                            <span>Staged ({gitState.stagedFiles.length})</span>
+                            <div className="h-[1px] flex-1 bg-caspier-border/30 ml-3" />
                         </div>
                         {gitState.stagedFiles.length === 0 ? (
-                            <div className="text-xs text-caspier-muted italic">No staged changes</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border/30 rounded-lg">No staged changes</div>
                         ) : (
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {gitState.stagedFiles.map(id => (
-                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover p-1 rounded">
-                                        <div className="flex items-center gap-2 overflow-hidden">
-                                            <SmartFileIcon name={findFileName(files, id)} className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                            <span className="text-sm text-caspier-text truncate">{findFileName(files, id)}</span>
-                                            <span className="text-[10px] text-caspier-muted">M</span>
+                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border0">
+                                        <div className="flex items-center gap-2.5 overflow-hidden">
+                                            <SmartFileIcon name={findFileName(files, id)} className="w-3.5 h-3.5 flex-shrink-0" />
+                                            <span className="text-xs font-bold text-caspier-text truncate">{findFileName(files, id)}</span>
+                                            <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-1 rounded">STAGED</span>
                                         </div>
                                         <button
-                                            className="p-1 text-caspier-muted hover:text-caspier-text opacity-0 group-hover:opacity-100 transition-opacity"
+                                            className="p-1 rounded-md text-caspier-muted hover:text-caspier-text hover:bg-caspier-border0 opacity-0 group-hover:opacity-100 transition-all scale-90"
                                             onClick={() => onUnstageFile?.(id)}
                                             title="Unstage"
                                         >
-                                            <MinusIcon className="w-4 h-4" />
+                                            <MinusIcon className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 ))}
@@ -673,27 +693,41 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
                     {/* Changes */}
                     <div>
-                        <div className="flex items-center justify-between text-xs font-bold text-caspier-muted mb-2 uppercase">
+                        <div className="flex items-center justify-between text-[10px] font-black text-caspier-muted mb-2 uppercase tracking-widest px-1">
                             <span>Changes ({gitState.modifiedFiles.length})</span>
+                            <div className="h-[1px] flex-1 bg-caspier-border/30 ml-3" />
                         </div>
                         {gitState.modifiedFiles.length === 0 ? (
-                            <div className="text-xs text-caspier-muted italic">No changes</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border/30 rounded-lg">All changes committed</div>
                         ) : (
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {gitState.modifiedFiles.map(id => (
-                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover p-1 rounded">
-                                        <div className="flex items-center gap-2 overflow-hidden">
-                                            <SmartFileIcon name={findFileName(files, id)} className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-                                            <span className="text-sm text-caspier-text truncate">{findFileName(files, id)}</span>
-                                            <span className="text-[10px] text-caspier-muted">M</span>
+                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border0">
+                                        <div className="flex items-center gap-2.5 overflow-hidden">
+                                            <SmartFileIcon name={findFileName(files, id)} className="w-3.5 h-3.5 flex-shrink-0" />
+                                            <span className="text-xs font-bold text-caspier-text truncate">{findFileName(files, id)}</span>
+                                            <span className="text-[9px] font-black text-labstx-orange bg-labstx-orange/10 px-1 rounded">MODIFIED</span>
                                         </div>
-                                        <button
-                                            className="p-1 text-caspier-muted hover:text-caspier-text opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={() => onStageFile?.(id)}
-                                            title="Stage"
-                                        >
-                                            <PlusIcon className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all scale-90">
+                                            <button
+                                                className="p-1 rounded-md text-caspier-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
+                                                onClick={() => {
+                                                    if (window.confirm('Discard all changes in this file?')) {
+                                                        onDiscardFile?.(id);
+                                                    }
+                                                }}
+                                                title="Discard Changes"
+                                            >
+                                                <TrashIcon className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                className="p-1 rounded-md text-caspier-muted hover:text-green-500 hover:bg-green-500/10 transition-all"
+                                                onClick={() => onStageFile?.(id)}
+                                                title="Stage"
+                                            >
+                                                <PlusIcon className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -823,19 +857,20 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                             </div>
 
                                             {/* Content Column */}
-                                            <div className="flex-1 min-w-0 flex flex-col justify-center border-b border-caspier-border/10 group-last:border-0 ml-2">
-                                                <div className="flex items-center gap-2 mb-0.5">
-                                                    <span className={`text-xs font-bold truncate transition-colors ${isHead ? 'text-caspier-text' : 'text-caspier-muted hover:text-caspier-text'}`}>
+                                            <div className="flex-1 min-w-0 flex flex-col justify-center border-b border-caspier-border group-last:border-0 ml-3 py-1">
+                                                <div className="flex items-center gap-2 mb-0.5 min-w-0">
+                                                    <GitCommitIcon className={`w-3 h-3 flex-shrink-0 ${isHead ? 'text-labstx-orange' : 'text-caspier-muted opacity-50'}`} />
+                                                    <span className={`text-[11px] font-bold truncate transition-colors leading-tight ${isHead ? 'text-caspier-text' : 'text-caspier-muted hover:text-caspier-text'}`}>
                                                         {commit.message}
                                                     </span>
                                                     {isHead && (
-                                                        <span className="text-[10px] border border-caspier-red/50 text-caspier-red px-1 rounded bg-caspier-red/5">HEAD</span>
+                                                        <span className="text-[8px] font-black border border-labstx-orange/40 text-labstx-orange px-1 rounded bg-labstx-orange/5 uppercase tracking-tighter">HEAD</span>
                                                     )}
                                                 </div>
 
-                                                <div className="flex items-center gap-3 text-[10px] text-caspier-muted">
-                                                    <span className="font-mono text-caspier-text opacity-70">{commit.hash || commit.id.substring(commit.id.length - 6)}</span>
-                                                    <span>{new Date(commit.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                <div className="flex items-center gap-3 text-[9px] text-caspier-muted font-bold tracking-tight">
+                                                    <span className="font-mono text-caspier-text opacity-50 px-1 bg-caspier-black/50 rounded">{commit.hash || commit.id.substring(commit.id.length - 6)}</span>
+                                                    <span className="opacity-60">{new Date(commit.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -895,7 +930,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 </div>
                 <div className="flex-1 overflow-y-auto p-4">
 
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 border-b border-gray-800 pb-2">Editor Configuration</h3>
+                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 border-b border-caspier-border pb-2">Editor Configuration</h3>
 
                     <InputGroup label="Font Size">
                         <input
@@ -937,7 +972,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         <label htmlFor="minimap" className="text-sm text-caspier-text">Show Minimap</label>
                     </div>
 
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-gray-800 pb-2">Compiler Configuration</h3>
+                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-caspier-border pb-2">Compiler Configuration</h3>
 
                     <div className="flex items-center gap-2 mb-2">
                         <input
@@ -961,7 +996,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         <label htmlFor="autoCompile" className="text-sm text-caspier-text">Auto Compile</label>
                     </div>
 
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-gray-800 pb-2">AI Configuration</h3>
+                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-caspier-border pb-2">AI Configuration</h3>
 
                     <InputGroup label="AI Model">
                         <select
@@ -1029,6 +1064,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     compilationResult={compilationResult}
                     contractCode={contractCode}
                     contractName={contractName}
+                    theme={theme}
                 />
             );
             case ActivityView.SETTINGS: return renderSettings();

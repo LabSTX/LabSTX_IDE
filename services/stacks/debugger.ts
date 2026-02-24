@@ -1,5 +1,4 @@
 import { CompilationResult } from '../../types';
-import { getSimnet } from './simnet';
 
 export interface DebugLine {
     id: string;
@@ -22,96 +21,96 @@ export interface StateVar {
     value: string;
 }
 
+/**
+ * Clarity Debugger (Backend-powered)
+ * This service handles REPL execution and state inspection by calling the Node.js backend.
+ */
 export class ClarityDebugger {
     /**
-     * Executes a Clarity expression locally in the browser simnet
+     * Executes a Clarity expression via the backend Simnet
      */
     static async execute(
         expression: string,
         contractContext?: { code: string; name: string }
     ): Promise<{ output: string; success: boolean; trace?: TraceStep[]; state?: StateVar[] }> {
         try {
-            const simnet = await getSimnet();
-            const deployer = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
-
-            // If context provided, ensure the contract is available in the simnet
-            if (contractContext) {
-                try {
-                    simnet.deployContract(contractContext.name, contractContext.code, deployer);
-                } catch (e) {
-                    // Might be already deployed, which is fine
-                }
+            // 1. If we have a contract context, ensure it's deployed to the backend first
+            if (contractContext && contractContext.name) {
+                await fetch('/api/clarity/deploy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: contractContext.code,
+                        name: contractContext.name
+                    })
+                });
             }
 
-            // runSnippet returns the evaluation result
-            const result = simnet.runSnippet(expression);
+            // 2. Execute the snippet
+            const response = await fetch('/api/clarity/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ snippet: expression })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Execution failed');
+            }
+
+            const result = await response.json();
 
             return {
-                success: true,
-                output: result.toString(), // Simplified conversion
-                trace: [] // SDK-browser trace extraction might be more complex
+                success: result.success,
+                output: result.result,
+                trace: [] // Trace implementation can be added to backend
             };
         } catch (error: any) {
-            console.error('Clarity local debug error:', error);
+            console.error('[Debugger] Backend execution error:', error);
             return {
                 success: false,
-                output: error.message || 'Execution failed'
+                output: `Error: ${error.message}`
             };
         }
     }
 
     /**
-     * Gets the current state for a specific contract locally
+     * Gets state data from the backend
      */
     static async getDebugData(
         code: string,
         contractName: string
     ): Promise<{ state: StateVar[]; trace: TraceStep[] }> {
         try {
-            const simnet = await getSimnet();
-            const deployer = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
+            // Ensure deployed
+            await fetch('/api/clarity/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, name: contractName })
+            });
 
-            // Ensure contract is deployed to analyze it
-            const normalizedName = contractName.replace(/\.clar$/, '');
-            let contract;
-            try {
-                contract = simnet.deployContract(normalizedName, code, deployer);
-            } catch (e) {
-                // If it exists, retrieve it
-                contract = simnet.getContractInterface(`${deployer}.${normalizedName}`);
-            }
+            // Fetch state for this specific contract
+            const response = await fetch('/api/clarity/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contractName })
+            });
 
-            // Extract "state" - Clarinet SDK might have better ways, 
-            // but we'll try to get variables if possible.
-            // This is a simplified version using the interface.
-            const state: StateVar[] = [];
-            if (contract && contract.variables) {
-                for (const v of contract.variables) {
-                    try {
-                        const val = simnet.getDataVar(normalizedName, v.name, deployer);
-                        state.push({
-                            name: v.name,
-                            type: v.type,
-                            value: val.toString()
-                        });
-                    } catch (e) {
-                        state.push({ name: v.name, type: v.type, value: '(unknown)' });
-                    }
-                }
-            }
+            if (!response.ok) throw new Error('State fetch failed');
+
+            const result = await response.json();
 
             return {
-                state: state.length > 0 ? state : [
-                    { name: 'Loading...', type: 'status', value: 'Simnet ready' }
+                state: result.state && result.state.length > 0 ? result.state : [
+                    { name: 'Simnet Status', type: 'system', value: 'Connected to Backend' },
+                    { name: 'Block Height', type: 'uint', value: result.blockHeight?.toString() || '0' },
+                    { name: 'Deployer', type: 'principal', value: result.deployer || '...' }
                 ],
                 trace: []
             };
-        } catch (error: any) {
-            console.error('Clarity local analyze error:', error);
-            return {
-                state: [],
-                trace: []
-            };
+        } catch (error) {
+            console.error('[Debugger] Failed to get state:', error);
+            return { state: [], trace: [] };
         }
     }
 }
