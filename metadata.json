@@ -1,0 +1,5 @@
+{
+  "name": "Caspier IDE",
+  "description": "A high-performance Ethereum IDE clone with a custom black and red aesthetic, featuring Monaco Editor and Gemini-powered AI assistance.",
+  "requestFramePermissions": []
+}

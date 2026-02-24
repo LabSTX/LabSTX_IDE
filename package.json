@@ -1,0 +1,42 @@
+{
+  "name": "labstx-ide",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@hirosystems/clarinet-sdk": "^3.8.1",
+    "@make-software/csprclick-core-client": "^1.11.0",
+    "@make-software/csprclick-ui": "^1.12.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@stacks/clarinet-sdk": "^3.14.0",
+    "@stacks/clarinet-sdk-browser": "^3.14.0",
+    "@stacks/common": "^7.3.1",
+    "@stacks/connect": "^8.2.5",
+    "@stacks/network": "^7.3.1",
+    "@stacks/transactions": "^7.3.1",
+    "assemblyscript": "^0.27.0",
+    "casper-js-sdk": "^2.7.1",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "jszip": "^3.10.1",
+    "monaco-editor": "^0.45.0",
+    "multer": "^2.0.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0",
+    "vscode-icons-js": "^11.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

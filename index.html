@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabSTX IDE</title>
+  <link rel="icon" type="image/svg+xml" href="/lab_stx_dark.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #111111;
+      --bg-tertiary: #161616;
+      --bg-hover: #1c1c1c;
+      --text-primary: #e0e0e0;
+      --text-secondary: #9ca3af;
+      --border-color: #262626;
+      --stx-orange: #007bff;
+      /* Changed to Blue */
+      --stx-purple: #5546ff;
+      --red-dim: rgba(0, 123, 255, 0.1);
+      /* Changed to Blue Dim */
+    }
+
+    [data-theme='light'] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f9f9f9;
+      --bg-tertiary: #f0f0f0;
+      --bg-hover: #e5e5e5;
+      --text-primary: #1a1a1a;
+      --text-secondary: #4b5563;
+      --border-color: #e5e5e5;
+      --stx-orange: #007bff;
+      /* Changed to Blue */
+      --stx-purple: #4c3ef0;
+      --red-dim: rgba(0, 123, 255, 0.05);
+      /* Changed to Blue Dim */
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border: 2px solid var(--bg-primary);
+      border-radius: 0px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--stx-orange);
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            labstx: {
+              black: 'var(--bg-primary)',
+              dark: 'var(--bg-secondary)',
+              panel: 'var(--bg-tertiary)',
+              hover: 'var(--bg-hover)',
+              orange: 'var(--stx-orange)',
+              purple: 'var(--stx-purple)',
+              accent: 'var(--stx-orange)',
+              redDim: 'var(--red-dim)',
+              text: 'var(--text-primary)',
+              muted: 'var(--text-secondary)',
+              border: 'var(--border-color)'
+            },
+            caspier: {
+              black: 'var(--bg-primary)',
+              dark: 'var(--bg-secondary)',
+              panel: 'var(--bg-tertiary)',
+              hover: 'var(--bg-hover)',
+              text: 'var(--text-primary)',
+              muted: 'var(--text-secondary)',
+              border: 'var(--border-color)',
+              red: 'var(--stx-orange)',
+              active: 'var(--stx-orange)'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          boxShadow: {
+            'neobrutal': '4px 4px 0 0 var(--stx-orange)',
+            'neobrutal-sm': '2px 2px 0 0 var(--stx-orange)',
+          }
+        }
+      }
+    }
+  </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "@monaco-editor/react": "https://aistudiocdn.com/@monaco-editor/react@^4.7.0",
+    "jszip": "https://aistudiocdn.com/jszip@^3.10.1"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>
