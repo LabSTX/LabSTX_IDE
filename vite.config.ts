@@ -26,11 +26,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // RPC proxy endpoint - handled by Vite middleware in dev, Vercel serverless in prod
         '/ide-api/rpc': {
           target: 'https://node.testnet.casper.network',
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api\/rpc/, '/rpc'),
+          rewrite: (path) => path.replace(/^\/ide-api\/rpc/, '/rpc'),
           configure: (proxy) => {
             proxy.on('error', (err) => console.log('[RPC Proxy] Error:', err.message));
             proxy.on('proxyReq', () => console.log('[RPC Proxy] Request to Casper testnet'));

@@ -7,7 +7,7 @@ import { DeployConfig, WalletConnection } from '../../types';
  */
 export class CasperDeploymentService {
   // RPC proxy endpoint - handled by Vite middleware in dev, Vercel serverless in prod
-  private static readonly RPC_PROXY = '/api/rpc';
+  private static readonly RPC_PROXY = '/ide-api/rpc';
 
   private static readonly NETWORKS = {
     testnet: 'https://node-clarity-testnet.make.services/rpc',

@@ -17,7 +17,7 @@ function hexToBytes(hex: string): Uint8Array {
  * Handles calling deployed contracts via entry points using StoredContractByHash
  */
 export class CasperContractCallService {
-    private static readonly RPC_PROXY = '/api/rpc';
+    private static readonly RPC_PROXY = '/ide-api/rpc';
 
     /**
      * Call a deployed contract by its hash (StoredContractByHash variant)
