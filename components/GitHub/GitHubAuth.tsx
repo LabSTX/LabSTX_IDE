@@ -63,11 +63,11 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
     };
 
     const handleLogin = () => {
-        window.location.href = '/api/auth/github';
+        window.location.href = '/ide-api/auth/github';
     };
 
     const handleLogout = () => {
-        window.location.href = '/api/auth/logout';
+        window.location.href = '/ide-api/auth/logout';
     };
 
     if (loading) {

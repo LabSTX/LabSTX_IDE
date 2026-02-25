@@ -375,17 +375,17 @@ app.post('/api/git/checkout', async (req, res) => {
 
 // --- GitHub Auth Routes ---
 
-app.get('/api/auth/github', (req, res) => {
+app.get('/ide-api/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     if (!clientId) return res.status(500).json({ error: 'GitHub OAuth not configured' });
 
-    const redirectUri = `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/auth/github/callback`;
+    const redirectUri = `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/ide-api/auth/github/callback`;
     const scope = 'read:user user:email repo gist';
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
     res.redirect(githubAuthUrl);
 });
 
-app.get('/api/auth/github/callback', async (req, res) => {
+app.get('/ide-api/auth/github/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.redirect('/?error=no_code');
 
@@ -423,7 +423,7 @@ app.get('/api/auth/github/callback', async (req, res) => {
     }
 });
 
-app.get('/api/auth/logout', (req, res) => {
+app.get('/ide-api/auth/logout', (req, res) => {
     res.setHeader('Set-Cookie', 'github_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
     res.redirect('http://localhost:3000/');
 });

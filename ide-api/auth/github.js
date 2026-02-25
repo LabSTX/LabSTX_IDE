@@ -6,7 +6,7 @@ export default function handler(req, res) {
         return res.status(500).json({ error: 'GitHub OAuth not configured' });
     }
 
-    const redirectUri = `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/auth/github/callback`;
+    const redirectUri = `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/ide-api/auth/github/callback`;
 
     const scope = 'read:user user:email repo gist';
 
