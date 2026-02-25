@@ -11,22 +11,22 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
       proxy: {
-        '/api/clarity': {
+        '/ide-api/clarity': {
           target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
-        '/api/auth': {
+        '/ide-api/auth': {
           target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
-        '/api/github': {
+        '/ide-api/github': {
           target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
-        '/api/rpc': {
+        '/ide-api/rpc': {
           target: 'https://node.testnet.casper.network',
           changeOrigin: true,
           secure: false,

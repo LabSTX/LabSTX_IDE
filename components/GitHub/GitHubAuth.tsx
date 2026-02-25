@@ -42,7 +42,7 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
 
     const checkAuth = async () => {
         try {
-            const response = await fetch('/api/github/user');
+            const response = await fetch('/ide-api/github/user');
             if (!response.ok) return;
 
             const contentType = response.headers.get('content-type');
@@ -194,7 +194,7 @@ const CloneModal: React.FC<{
 
     const fetchRepos = async () => {
         try {
-            const response = await fetch('/api/github/repos');
+            const response = await fetch('/ide-api/github/repos');
             const data = await response.json();
             setRepos(data.repos || []);
         } catch (error) {
@@ -208,7 +208,7 @@ const CloneModal: React.FC<{
         setCloning(true);
         try {
             const [owner, repoName] = repo.full_name.split('/');
-            const response = await fetch('/api/github/clone', {
+            const response = await fetch('/ide-api/github/clone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ owner, repo: repoName })
@@ -307,7 +307,7 @@ const GistModal: React.FC<{
 
         setCreating(true);
         try {
-            const response = await fetch('/api/github/gist', {
+            const response = await fetch('/ide-api/github/gist', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ description, isPublic, files })

@@ -813,14 +813,14 @@ function App() {
 
             // If we have a contract, ensure it's "deployed" to the backend session first
             if (contractContext) {
-                await fetch('/api/clarity/deploy', {
+                await fetch('/ide-api/clarity/deploy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(contractContext)
                 });
             }
 
-            const response = await fetch('/api/clarity/terminal', {
+            const response = await fetch('/ide-api/clarity/terminal', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ command })

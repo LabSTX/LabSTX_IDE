@@ -36,7 +36,7 @@ export class ClarityDebugger {
         try {
             // 1. If we have a contract context, ensure it's deployed to the backend first
             if (contractContext && contractContext.name) {
-                await fetch('/api/clarity/deploy', {
+                await fetch('/ide-api/clarity/deploy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -47,7 +47,7 @@ export class ClarityDebugger {
             }
 
             // 2. Execute the snippet
-            const response = await fetch('/api/clarity/execute', {
+            const response = await fetch('/ide-api/clarity/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ snippet: expression })
@@ -83,14 +83,14 @@ export class ClarityDebugger {
     ): Promise<{ state: StateVar[]; trace: TraceStep[] }> {
         try {
             // Ensure deployed
-            await fetch('/api/clarity/deploy', {
+            await fetch('/ide-api/clarity/deploy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code, name: contractName })
             });
 
             // Fetch state for this specific contract
-            const response = await fetch('/api/clarity/state', {
+            const response = await fetch('/ide-api/clarity/state', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contractName })

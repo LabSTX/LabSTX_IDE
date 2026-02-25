@@ -49,7 +49,7 @@ export const PublicCloneModal: React.FC<PublicCloneModalProps> = ({ onClone }) =
         setError(null);
 
         try {
-            const response = await fetch('/api/github/clone', {
+            const response = await fetch('/ide-api/github/clone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ owner, repo })

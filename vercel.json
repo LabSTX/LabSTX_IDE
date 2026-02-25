@@ -5,13 +5,13 @@
     "framework": "vite",
     "rewrites": [
         {
-            "source": "/api/rpc",
-            "destination": "/api/rpc.js"
+            "source": "/ide-api/rpc",
+            "destination": "/ide-api/rpc.js"
         }
     ],
     "headers": [
         {
-            "source": "/api/(.*)",
+            "source": "/ide-api/(.*)",
             "headers": [
                 {
                     "key": "Access-Control-Allow-Origin",

@@ -11,7 +11,7 @@ export class ClarityCompiler {
         try {
             console.log(`[Compiler] Checking ${contractName} via backend...`);
 
-            const response = await fetch('/api/clarity/check', {
+            const response = await fetch('/ide-api/clarity/check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code, name: contractName })

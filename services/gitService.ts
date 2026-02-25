@@ -2,7 +2,7 @@ import { GitState, GitCommit } from '../types';
 
 export class GitService {
     static async getStatus(): Promise<Partial<GitState>> {
-        const response = await fetch('/api/git/status');
+        const response = await fetch('/ide-api/git/status');
         if (!response.ok) throw new Error('Failed to fetch git status');
         const data = await response.json();
         return {
@@ -13,14 +13,14 @@ export class GitService {
     }
 
     static async getLog(): Promise<GitCommit[]> {
-        const response = await fetch('/api/git/log');
+        const response = await fetch('/ide-api/git/log');
         if (!response.ok) throw new Error('Failed to fetch git log');
         const data = await response.json();
         return data.commits;
     }
 
     static async stageFile(filePath: string): Promise<void> {
-        const response = await fetch('/api/git/stage', {
+        const response = await fetch('/ide-api/git/stage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filePath })
@@ -29,7 +29,7 @@ export class GitService {
     }
 
     static async unstageFile(filePath: string): Promise<void> {
-        const response = await fetch('/api/git/unstage', {
+        const response = await fetch('/ide-api/git/unstage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filePath })
@@ -38,7 +38,7 @@ export class GitService {
     }
 
     static async discardFile(filePath: string): Promise<void> {
-        const response = await fetch('/api/git/discard', {
+        const response = await fetch('/ide-api/git/discard', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filePath })
@@ -47,7 +47,7 @@ export class GitService {
     }
 
     static async commit(message: string): Promise<void> {
-        const response = await fetch('/api/git/commit', {
+        const response = await fetch('/ide-api/git/commit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message })
@@ -56,14 +56,14 @@ export class GitService {
     }
 
     static async getBranches(): Promise<string[]> {
-        const response = await fetch('/api/git/branches');
+        const response = await fetch('/ide-api/git/branches');
         if (!response.ok) throw new Error('Failed to fetch branches');
         const data = await response.json();
         return data.branches;
     }
 
     static async checkout(branch: string, create: boolean = false): Promise<void> {
-        const response = await fetch('/api/git/checkout', {
+        const response = await fetch('/ide-api/git/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ branch, create })
