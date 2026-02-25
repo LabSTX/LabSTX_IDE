@@ -38,7 +38,7 @@ const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractN
         return (
             <div className="p-6 space-y-4">
                 {[1, 2, 3].map(i => (
-                    <div key={i} className="h-16 bg-caspier-panel/20 animate-pulse rounded-xl border border-caspier-border/30" />
+                    <div key={i} className="h-16 bg-caspier-panel/20 animate-pulse rounded-xl border border-caspier-border" />
                 ))}
             </div>
         );
@@ -114,7 +114,7 @@ const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractN
                     </div>
                     <div className="space-y-2">
                         {system.map((sv, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-3 bg-caspier-dark/40 rounded-xl border border-caspier-border/30">
+                            <div key={idx} className="flex items-center justify-between p-3 bg-caspier-dark/40 rounded-xl border border-caspier-border">
                                 <span className="text-[10px] text-caspier-muted font-bold">{sv.name}</span>
                                 <span className="text-[10px] text-caspier-text font-mono truncate ml-4 opacity-80">{sv.value}</span>
                             </div>

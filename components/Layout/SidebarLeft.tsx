@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { FileNode, ActivityView, ProjectSettings, GitState, GitCommit, WalletConnection, CompilationResult, DeployedContract, TerminalLine } from '../../types';
 import {
@@ -11,6 +10,7 @@ import { Button } from '../UI/Button';
 import DeployPanel from '../Deploy/DeployPanel';
 import DebugPanel from '../Layout/DebugPanel';
 import { TEMPLATES, templateToFileNodes } from '../../services/templates';
+import { NewProjectModal } from './NewProjectModal';
 
 interface SidebarLeftProps {
     files: FileNode[];
@@ -41,6 +41,10 @@ interface SidebarLeftProps {
     compilationResult?: CompilationResult;
     onDeploySuccess?: (contract: DeployedContract) => void;
     onLoadTemplate?: (nodes: FileNode[]) => void;
+    onCreateBlank?: () => void;
+    onImport?: () => void;
+    isProjectModalOpen: boolean;
+    setIsProjectModalOpen: (open: boolean) => void;
     onAddTerminalLine?: (line: Omit<TerminalLine, 'id'>) => void;
     theme: 'dark' | 'light';
 }
@@ -109,7 +113,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
         <div className="select-none text-sm">
             <div
                 className={`group flex items-center py-1 px-2 cursor-pointer transition-colors relative pr-2 ${node.id === activeFileId
-                    ? 'bg-caspier-red/10 text-caspier-red border-r-2 border-caspier-red'
+                    ? 'bg-labstx-orange/10 text-labstx-orange border-r-2 border-labstx-orange'
                     : 'text-caspier-muted hover:bg-caspier-hover hover:text-caspier-text'
                     }`}
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -126,7 +130,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 
                 {/* Icon */}
                 <span className="mr-1.5 flex-shrink-0">
-                    {node.type === 'folder' ? <FolderIcon className="w-4 h-4 text-caspier-red" open={isOpen} /> : <SmartFileIcon name={node.name} className="w-4 h-4" />}
+                    {node.type === 'folder' ? <FolderIcon className="w-4 h-4 text-labstx-orange" open={isOpen} /> : <SmartFileIcon name={node.name} className="w-4 h-4" />}
                 </span>
 
                 {/* Name or Input */}
@@ -136,7 +140,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                             <input
                                 ref={inputRef}
                                 type="text"
-                                className="w-full bg-caspier-black border border-caspier-red text-caspier-text px-1 py-0.5 text-xs outline-none"
+                                className="w-full bg-caspier-black border border-labstx-orange text-caspier-text px-1 py-0.5 text-xs outline-none"
                                 value={inputValue}
                                 onChange={(e) => setInputValue(e.target.value)}
                                 onKeyDown={(e) => handleKeyDown(e, true)}
@@ -150,18 +154,18 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 
                 {/* Hover Actions */}
                 {!isRenaming && (
-                    <div className="hidden group-hover:flex items-center gap-1 bg-caspier-dark pl-2 shadow-[-10px_0_10px_0_rgba(0,0,0,0.8)] z-10">
+                    <div className="flex items-center gap-1 pl-2 z-10">
                         {node.type === 'folder' && (
                             <>
                                 <button
-                                    className="p-1 hover:text-caspier-red"
+                                    className="p-1 hover:text-labstx-orange"
                                     title="New File"
                                     onClick={(e) => { e.stopPropagation(); setIsOpen(true); onStartCreate(node.id, 'file'); }}
                                 >
                                     <FilePlusIcon className="w-3 h-3" />
                                 </button>
                                 <button
-                                    className="p-1 hover:text-caspier-red"
+                                    className="p-1 hover:text-labstx-orange"
                                     title="New Folder"
                                     onClick={(e) => { e.stopPropagation(); setIsOpen(true); onStartCreate(node.id, 'folder'); }}
                                 >
@@ -202,13 +206,13 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                             style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}
                         >
                             <span className="mr-1.5 flex-shrink-0 ml-4.5">
-                                {creatingType === 'folder' ? <FolderIcon className="w-4 h-4 text-caspier-red" /> : <FileIcon className="w-4 h-4 text-caspier-muted" />}
+                                {creatingType === 'folder' ? <FolderIcon className="w-4 h-4 text-labstx-orange" /> : <FileIcon className="w-4 h-4 text-caspier-muted" />}
                             </span>
                             <div className="flex-1 flex items-center gap-1">
                                 <input
                                     ref={inputRef}
                                     type="text"
-                                    className="w-full bg-caspier-black border border-caspier-red text-caspier-text px-1 py-0.5 text-xs outline-none focus:shadow-[2px_2px_0_0_#ff2d2e]"
+                                    className="w-full bg-caspier-black border border-labstx-orange text-caspier-text px-1 py-0.5 text-xs outline-none focus:shadow-[2px_2px_0_0_#007bff]"
                                     placeholder={creatingType === 'folder' ? "Folder Name" : "File Name"}
                                     value={inputValue}
                                     onChange={(e) => setInputValue(e.target.value)}
@@ -258,47 +262,6 @@ const InputGroup: React.FC<InputGroupProps> = ({ label, children }) => (
     </div>
 );
 
-// Collapsible Templates Section Component
-interface TemplatesSectionProps {
-    templates: typeof TEMPLATES;
-    onLoadTemplate: (templateId: string) => void;
-}
-
-const TemplatesSection: React.FC<TemplatesSectionProps> = ({ templates, onLoadTemplate }) => {
-    const [isOpen, setIsOpen] = useState(false);
-
-    return (
-        <div className="border-b border-caspier-border bg-caspier-black">
-            <button
-                className="w-full p-3 flex items-center justify-between hover:bg-caspier-hover transition-colors"
-                onClick={() => setIsOpen(!isOpen)}
-            >
-                <span className="text-xs font-bold text-caspier-muted uppercase">
-                    Examples ({templates.length})
-                </span>
-                <span className="text-caspier-muted">
-                    {isOpen ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
-                </span>
-            </button>
-
-            {isOpen && (
-                <div className="px-3 pb-3 max-h-64 overflow-y-auto space-y-1">
-                    {templates.map(template => (
-                        <button
-                            key={template.id}
-                            onClick={() => onLoadTemplate(template.id)}
-                            className="w-full text-left p-2 bg-caspier-dark hover:bg-caspier-hover border border-caspier-border rounded text-xs transition-colors"
-                        >
-                            <div className="text-caspier-text font-medium">{template.name}</div>
-                            <div className="text-caspier-muted text-[10px] mt-0.5 truncate">{template.description}</div>
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
 interface SearchResult {
     file: FileNode;
     fileNameMatch: boolean;
@@ -312,7 +275,8 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     settings, onUpdateSettings,
     gitState, onStageFile, onUnstageFile, onDiscardFile, onCommit, onPush, onSwitchBranch, onCreateBranch,
     wallet, onWalletConnect, onWalletDisconnect, compilationResult, onDeploySuccess,
-    onLoadTemplate, theme, onAddTerminalLine
+    onLoadTemplate, onCreateBlank, onImport, theme, onAddTerminalLine,
+    isProjectModalOpen, setIsProjectModalOpen
 }) => {
     // Explorer State
     const [creatingInNodeId, setCreatingInNodeId] = useState<string | null>(null);
@@ -415,20 +379,6 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         return null;
     };
 
-    // Helper to find all Clarity files for deployment dropdown
-    const findClarityFiles = (nodes: FileNode[]): FileNode[] => {
-        let clarFiles: FileNode[] = [];
-        for (const node of nodes) {
-            if (node.type === 'file' && (node.name.endsWith('.clar') || node.language === 'clarity')) {
-                clarFiles.push(node);
-            }
-            if (node.children) {
-                clarFiles = [...clarFiles, ...findClarityFiles(node.children)];
-            }
-        }
-        return clarFiles;
-    };
-
     const handleCommitSubmit = () => {
         if (commitMessage.trim() && onCommit) {
             onCommit(commitMessage);
@@ -457,7 +407,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     const renderExplorer = () => (
         <>
             <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
-                <span className="text-xs font-bold text-caspier-text tracking-wider">FILE EXPLORER</span>
+                <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">File Explorer</span>
                 <div className="flex gap-2">
                     {/* Undo / Redo */}
                     {(onUndo && onRedo) && (
@@ -496,10 +446,16 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 </div>
             </div>
 
-            {/* Templates Section - Collapsible */}
-            {onLoadTemplate && (
-                <TemplatesSection templates={TEMPLATES} onLoadTemplate={handleLoadTemplate} />
-            )}
+            {/* Create Project Button */}
+            <div className="px-3 py-3 border-b border-caspier-border bg-caspier-black/40">
+                <button
+                    onClick={() => setIsProjectModalOpen(true)}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-labstx-orange/10 hover:bg-labstx-orange text-labstx-orange hover:text-white border border-labstx-orange hover:border-labstx-orange rounded-full transition-all font-black text-[10px] uppercase tracking-widest group shadow-sm active:scale-[0.98]"
+                >
+                    <PlusIcon className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-300" />
+                    Create New Project
+                </button>
+            </div>
 
             <div className="flex-1 overflow-y-auto py-2">
                 {files.map(node => (
@@ -527,11 +483,11 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     const renderSearch = () => (
         <div className="flex flex-col h-full">
             <div className="p-4 border-b border-caspier-border bg-caspier-black">
-                <h2 className="text-xs font-bold text-caspier-text tracking-wider mb-3">SEARCH</h2>
+                <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase mb-3">Search</h2>
                 <div className="relative">
                     <input
                         type="text"
-                        className="w-full bg-caspier-dark border border-caspier-border text-caspier-text text-sm px-3 py-1.5 focus:border-caspier-red outline-none pl-8"
+                        className="w-full bg-caspier-dark border border-caspier-border text-caspier-text text-sm px-3 py-1.5 focus:border-labstx-orange outline-none pl-8 rounded"
                         placeholder="Search"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -551,7 +507,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                             className="flex items-center gap-2 cursor-pointer py-1 px-2 hover:bg-caspier-hover rounded group"
                             onClick={() => onFileSelect(result.file.id)}
                         >
-                            <SmartFileIcon name={result.file.name} className="w-4 h-4 text-caspier-muted group-hover:text-caspier-red" />
+                            <SmartFileIcon name={result.file.name} className="w-4 h-4 text-caspier-muted group-hover:text-labstx-orange" />
                             <span className="text-sm text-caspier-text font-medium truncate flex-1">{result.file.name}</span>
                             <span className="text-xs bg-caspier-panel text-caspier-muted px-1.5 rounded-full border border-caspier-border">
                                 {result.contentMatches.length > 0 ? result.contentMatches.length : (result.fileNameMatch ? 'Name' : '0')}
@@ -580,12 +536,9 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     const renderGit = () => {
         if (!gitState) return null;
 
-        // Assign lanes to branches
-        // Main branch always lane 0
         const branches = Array.from(new Set(gitState.commits.map(c => c.branch || 'main'))) as string[];
         const lanes: Record<string, number> = {};
 
-        // Ensure main is 0
         if (branches.includes('main')) {
             lanes['main'] = 0;
             branches.filter(b => b !== 'main').forEach((b, i) => lanes[b] = i + 1);
@@ -595,18 +548,15 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
         const getLane = (branch?: string) => lanes[branch || 'main'] || 0;
 
-        // Visualization Constants
         const ROW_HEIGHT = 42;
         const COL_WIDTH = 14;
         const DOT_RADIUS = 3;
-
-        // Colors for branches
-        const branchColors = ['#ff2d2e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+        const branchColors = ['#007bff', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
         const getColor = (lane: number) => branchColors[lane % branchColors.length];
 
         return (
             <div className="flex flex-col h-full bg-caspier-dark">
-                <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black/50 backdrop-blur-sm sticky top-0 z-20">
+                <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
                     <div className="flex flex-col overflow-hidden">
                         <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase leading-none mb-1">Source Control</span>
                         <div className="flex items-center gap-1.5 group cursor-pointer" onClick={() => {
@@ -633,27 +583,19 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
-
-                    {/* Commit Input */}
-                    <div className="flex flex-col gap-2.5 p-1 bg-caspier-black/30 rounded-lg border border-caspier-border0">
+                    <div className="flex flex-col gap-2.5 p-1 bg-caspier-black/30 rounded-lg border border-caspier-border">
                         <textarea
-                            className="w-full bg-caspier-black/50 border border-caspier-border/30 text-caspier-text p-2.5 text-[11px] font-medium focus:border-labstx-orange/50 focus:ring-1 focus:ring-labstx-orange/20 outline-none resize-none h-20 rounded-md placeholder:text-caspier-muted transition-all"
+                            className="w-full bg-caspier-black/50 border border-caspier-border text-caspier-text p-2.5 text-[11px] font-medium focus:border-labstx-orange/50 focus:ring-1 focus:ring-labstx-orange/20 outline-none resize-none h-20 rounded-md placeholder:text-caspier-muted transition-all"
                             placeholder="Commit message..."
                             value={commitMessage}
                             onChange={(e) => setCommitMessage(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleCommitSubmit();
-                                }
-                            }}
                         />
                         <button
                             onClick={handleCommitSubmit}
                             disabled={gitState.stagedFiles.length === 0 || !commitMessage.trim()}
                             className={`flex items-center justify-center gap-2 py-1.5 px-4 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${(gitState.stagedFiles.length === 0 || !commitMessage.trim())
-                                ? 'bg-caspier-border/30 text-caspier-muted cursor-not-allowed opacity-50'
-                                : 'bg-labstx-orange text-white hover:bg-labstx-orange/90 shadow-[0_2px_10px_-3px_rgba(255,107,0,0.4)] active:scale-95'
+                                ? 'bg-caspier-border text-caspier-muted cursor-not-allowed opacity-50'
+                                : 'bg-labstx-orange text-white hover:bg-labstx-orange/90 shadow-[0_2px_10px_-3px_rgba(0,123,255,0.4)] active:scale-95'
                                 }`}
                         >
                             <GitCommitIcon className="w-3.5 h-3.5" />
@@ -661,25 +603,24 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         </button>
                     </div>
 
-                    {/* Staged Changes */}
                     <div>
                         <div className="flex items-center justify-between text-[10px] font-black text-caspier-muted mb-2 uppercase tracking-widest px-1">
                             <span>Staged ({gitState.stagedFiles.length})</span>
-                            <div className="h-[1px] flex-1 bg-caspier-border/30 ml-3" />
+                            <div className="h-[1px] flex-1 bg-caspier-border ml-3" />
                         </div>
                         {gitState.stagedFiles.length === 0 ? (
-                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border/30 rounded-lg">No staged changes</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border rounded-lg">No staged changes</div>
                         ) : (
                             <div className="space-y-0.5">
                                 {gitState.stagedFiles.map(id => (
-                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border0">
+                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border">
                                         <div className="flex items-center gap-2.5 overflow-hidden">
                                             <SmartFileIcon name={findFileName(files, id)} className="w-3.5 h-3.5 flex-shrink-0" />
                                             <span className="text-xs font-bold text-caspier-text truncate">{findFileName(files, id)}</span>
                                             <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-1 rounded">STAGED</span>
                                         </div>
                                         <button
-                                            className="p-1 rounded-md text-caspier-muted hover:text-caspier-text hover:bg-caspier-border0 opacity-0 group-hover:opacity-100 transition-all scale-90"
+                                            className="p-1 rounded-md text-caspier-muted hover:text-caspier-text hover:bg-caspier-border opacity-0 group-hover:opacity-100 transition-all scale-90"
                                             onClick={() => onUnstageFile?.(id)}
                                             title="Unstage"
                                         >
@@ -691,18 +632,17 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         )}
                     </div>
 
-                    {/* Changes */}
                     <div>
                         <div className="flex items-center justify-between text-[10px] font-black text-caspier-muted mb-2 uppercase tracking-widest px-1">
                             <span>Changes ({gitState.modifiedFiles.length})</span>
-                            <div className="h-[1px] flex-1 bg-caspier-border/30 ml-3" />
+                            <div className="h-[1px] flex-1 bg-caspier-border ml-3" />
                         </div>
                         {gitState.modifiedFiles.length === 0 ? (
-                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border/30 rounded-lg">All changes committed</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border rounded-lg">All changes committed</div>
                         ) : (
                             <div className="space-y-0.5">
                                 {gitState.modifiedFiles.map(id => (
-                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border0">
+                                    <div key={id} className="flex items-center justify-between group hover:bg-caspier-hover px-2 py-1.5 rounded-md transition-all border border-transparent hover:border-caspier-border">
                                         <div className="flex items-center gap-2.5 overflow-hidden">
                                             <SmartFileIcon name={findFileName(files, id)} className="w-3.5 h-3.5 flex-shrink-0" />
                                             <span className="text-xs font-bold text-caspier-text truncate">{findFileName(files, id)}</span>
@@ -734,12 +674,11 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         )}
                     </div>
 
-                    {/* History Graph */}
                     <div className="pt-4 border-t border-caspier-border">
-                        <div className="flex items-center justify-between text-xs font-bold text-caspier-muted mb-4 uppercase">
+                        <div className="flex items-center justify-between text-[10px] font-black text-caspier-muted mb-4 uppercase tracking-widest px-1">
                             <span>Commits ({gitState.commits.length})</span>
-                            <div className="flex items-center gap-1 text-[10px] bg-caspier-red/10 text-caspier-red px-1.5 py-0.5 rounded">
-                                <GitIcon className="w-3 h-3" />
+                            <div className="flex items-center gap-1 text-[9px] bg-labstx-orange/10 text-labstx-orange px-1.5 py-0.5 rounded border border-labstx-orange/20">
+                                <GitBranchIcon className="w-2.5 h-2.5" />
                                 <span>{gitState.branch}</span>
                             </div>
                         </div>
@@ -756,87 +695,28 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
                                     return (
                                         <div key={commit.id} className="flex relative h-[42px]">
-                                            {/* Graph Column */}
                                             <div className="relative flex-shrink-0 w-[50px]">
                                                 <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
-                                                    {/* Draw Lines */}
-                                                    {/* Line to next commit if exists and is parent */}
-                                                    {gitState.commits.slice(index + 1).map((nextCommit, nextIndex) => {
-                                                        const relativeNextIndex = nextIndex; // 0 means immediate next
-                                                        // Simple heuristic: if next commit is a parent, connect it.
-                                                        if (commit.parents?.includes(nextCommit.id) || (commit.parents?.length === 0 && commit.branch === nextCommit.branch && relativeNextIndex === 0)) {
-                                                            const nextLane = getLane(nextCommit.branch);
-                                                            const nextX = nextLane * COL_WIDTH + COL_WIDTH / 2;
-                                                            const nextY = ROW_HEIGHT + ROW_HEIGHT / 2 + (relativeNextIndex * ROW_HEIGHT);
-
-                                                            // Only draw if it's the immediate visual neighbor for clean look, or handle long lines
-                                                            // For this simple viz, we just draw to immediate next row if it is a parent
-                                                            if (relativeNextIndex === 0) {
-                                                                return (
-                                                                    <path
-                                                                        key={nextCommit.id}
-                                                                        d={`M ${laneX} ${centerY} C ${laneX} ${ROW_HEIGHT}, ${nextX} ${0}, ${nextX} ${ROW_HEIGHT / 2}`}
-                                                                        stroke={getColor(nextLane)}
-                                                                        strokeWidth="2"
-                                                                        fill="none"
-                                                                    />
-                                                                );
-                                                            }
-                                                        }
-                                                        return null;
-                                                    })}
-
-                                                    {/* Explicit Parents Handling for merges (draw long lines or curves to other lanes) */}
-                                                    {commit.parents && commit.parents.map(parentId => {
-                                                        // Find parent in the list
+                                                    {commit.parents?.map(parentId => {
                                                         const parentIndex = gitState.commits.findIndex(c => c.id === parentId);
                                                         if (parentIndex > index) {
                                                             const parent = gitState.commits[parentIndex];
                                                             const parentLane = getLane(parent.branch);
-
-                                                            // If immediate neighbor, already handled above roughly. 
-                                                            // This handles merges specifically or branching off
-                                                            if (parentIndex === index + 1 && parentLane !== lane) {
-                                                                const parentX = parentLane * COL_WIDTH + COL_WIDTH / 2;
-                                                                return (
-                                                                    <path
-                                                                        key={parentId}
-                                                                        d={`M ${laneX} ${centerY} C ${laneX} ${ROW_HEIGHT - 5}, ${parentX} ${5}, ${parentX} ${ROW_HEIGHT / 2}`}
-                                                                        stroke={getColor(parentLane)}
-                                                                        strokeWidth="2"
-                                                                        fill="none"
-                                                                    />
-                                                                );
-                                                            }
-
-                                                            // Special Merge Curve for visual flair
-                                                            if (parentLane !== lane) {
-                                                                const parentX = parentLane * COL_WIDTH + COL_WIDTH / 2;
-                                                                // Just draw a curve downwards out of view or to a specific point if close
-                                                                if (parentIndex === index + 2) { // Just one skip
-                                                                    return (
-                                                                        <path
-                                                                            key={parentId}
-                                                                            d={`M ${laneX} ${centerY} C ${laneX} ${ROW_HEIGHT}, ${parentX} ${ROW_HEIGHT}, ${parentX} ${ROW_HEIGHT * 1.5}`}
-                                                                            stroke={getColor(parentLane)}
-                                                                            strokeWidth="2"
-                                                                            fill="none"
-                                                                            strokeDasharray="2,2"
-                                                                        />
-                                                                    );
-                                                                }
-                                                            }
+                                                            const parentX = parentLane * COL_WIDTH + COL_WIDTH / 2;
+                                                            const y2 = (parentIndex - index) * ROW_HEIGHT + ROW_HEIGHT / 2;
+                                                            return (
+                                                                <path
+                                                                    key={parentId}
+                                                                    d={`M ${laneX} ${centerY} C ${laneX} ${ROW_HEIGHT}, ${parentX} ${y2 - ROW_HEIGHT}, ${parentX} ${y2}`}
+                                                                    stroke={getColor(parentLane)}
+                                                                    strokeWidth="2"
+                                                                    fill="none"
+                                                                    opacity="0.6"
+                                                                />
+                                                            );
                                                         }
                                                         return null;
                                                     })}
-
-                                                    {/* Pass-through lines (simplified) - Draw vertical lines for other active lanes if we knew them. 
-                                                    For now, just draw a vertical line for main if we are not main */}
-                                                    {lane !== 0 && (
-                                                        <line x1={COL_WIDTH / 2} y1="0" x2={COL_WIDTH / 2} y2={ROW_HEIGHT} stroke={branchColors[0]} strokeWidth="2" opacity="0.3" />
-                                                    )}
-
-                                                    {/* Commit Dot */}
                                                     <circle
                                                         cx={laneX}
                                                         cy={centerY}
@@ -846,28 +726,19 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                                         strokeWidth="2"
                                                     />
                                                     {isHead && (
-                                                        <circle
-                                                            cx={laneX}
-                                                            cy={centerY}
-                                                            r={1.5}
-                                                            fill={getColor(lane)}
-                                                        />
+                                                        <circle cx={laneX} cy={centerY} r={1.5} fill={getColor(lane)} />
                                                     )}
                                                 </svg>
                                             </div>
-
-                                            {/* Content Column */}
                                             <div className="flex-1 min-w-0 flex flex-col justify-center border-b border-caspier-border group-last:border-0 ml-3 py-1">
                                                 <div className="flex items-center gap-2 mb-0.5 min-w-0">
-                                                    <GitCommitIcon className={`w-3 h-3 flex-shrink-0 ${isHead ? 'text-labstx-orange' : 'text-caspier-muted opacity-50'}`} />
-                                                    <span className={`text-[11px] font-bold truncate transition-colors leading-tight ${isHead ? 'text-caspier-text' : 'text-caspier-muted hover:text-caspier-text'}`}>
+                                                    <span className={`text-[11px] font-bold truncate leading-tight ${isHead ? 'text-white' : 'text-caspier-muted hover:text-caspier-text'}`}>
                                                         {commit.message}
                                                     </span>
                                                     {isHead && (
                                                         <span className="text-[8px] font-black border border-labstx-orange/40 text-labstx-orange px-1 rounded bg-labstx-orange/5 uppercase tracking-tighter">HEAD</span>
                                                     )}
                                                 </div>
-
                                                 <div className="flex items-center gap-3 text-[9px] text-caspier-muted font-bold tracking-tight">
                                                     <span className="font-mono text-caspier-text opacity-50 px-1 bg-caspier-black/50 rounded">{commit.hash || commit.id.substring(commit.id.length - 6)}</span>
                                                     <span className="opacity-60">{new Date(commit.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -879,202 +750,157 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                             </div>
                         )}
                     </div>
-
                 </div>
             </div>
         );
-    }
-
-    const renderDeploy = () => {
-        if (!wallet || !onWalletConnect || !onWalletDisconnect) {
-            return (
-                <div className="flex flex-col h-full">
-                    <div className="p-3 border-b border-caspier-border flex items-center gap-2 bg-caspier-black min-w-0">
-                        <RocketIcon className="w-4 h-4 text-caspier-muted flex-shrink-0" />
-                        {width >= 280 && (
-                            <span className="text-xs font-bold text-caspier-text tracking-wider whitespace-nowrap">
-                                DEPLOY & RUN TRANSACTIONS
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4">
-                        <div className="text-caspier-muted text-sm">Deploy panel requires wallet integration.</div>
-                    </div>
-                </div>
-            );
-        }
-
-        return (
-            <DeployPanel
-                files={files}
-                wallet={wallet}
-                onWalletConnect={onWalletConnect}
-                onWalletDisconnect={onWalletDisconnect}
-                compilationResult={compilationResult}
-                onDeploySuccess={onDeploySuccess}
-                onAddTerminalLine={onAddTerminalLine}
-                width={width}
-                theme={theme}
-            />
-        );
     };
 
-    const renderSettings = () => {
-        if (!settings || !onUpdateSettings) return null;
-
-        return (
-            <div className="flex flex-col h-full">
-                <div className="p-3 border-b border-caspier-border flex items-center gap-2 bg-caspier-black">
-                    <SettingsIcon className="w-4 h-4 text-caspier-muted" />
-                    <span className="text-xs font-bold text-caspier-text tracking-wider">PROJECT SETTINGS</span>
-                </div>
+    const renderDeploy = () => (
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-caspier-border bg-caspier-black">
+                <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Deploy & Interaction</h2>
+            </div>
+            {(!wallet || !onWalletConnect || !onWalletDisconnect) ? (
                 <div className="flex-1 overflow-y-auto p-4">
+                    <div className="text-caspier-muted text-sm italic">Connect your wallet to enable deployment features.</div>
+                </div>
+            ) : (
+                <DeployPanel
+                    files={files}
+                    wallet={wallet}
+                    onWalletConnect={onWalletConnect}
+                    onWalletDisconnect={onWalletDisconnect}
+                    compilationResult={compilationResult}
+                    onDeploySuccess={onDeploySuccess}
+                    onAddTerminalLine={onAddTerminalLine}
+                    width={width}
+                    theme={theme}
+                />
+            )}
+        </div>
+    );
 
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 border-b border-caspier-border pb-2">Editor Configuration</h3>
-
+    const renderSettings = () => (
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-caspier-border bg-caspier-black">
+                <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Project Settings</h2>
+            </div>
+            {(!settings || !onUpdateSettings) ? null : (
+                <div className="flex-1 overflow-y-auto p-4">
+                    <h3 className="text-labstx-orange font-black text-[10px] uppercase mb-4 tracking-widest border-b border-caspier-border pb-2">Editor Configuration</h3>
                     <InputGroup label="Font Size">
                         <input
                             type="number"
                             value={settings.fontSize}
                             onChange={(e) => onUpdateSettings('fontSize', parseInt(e.target.value))}
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-caspier-red outline-none"
+                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-labstx-orange outline-none"
                         />
                     </InputGroup>
-
                     <InputGroup label="Word Wrap">
                         <select
                             value={settings.wordWrap}
                             onChange={(e) => onUpdateSettings('wordWrap', e.target.value)}
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-caspier-red outline-none"
+                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-labstx-orange outline-none"
                         >
                             <option value="on">On</option>
                             <option value="off">Off</option>
                         </select>
                     </InputGroup>
-
                     <InputGroup label="Tab Size">
                         <input
                             type="number"
                             value={settings.tabSize}
                             onChange={(e) => onUpdateSettings('tabSize', parseInt(e.target.value))}
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-caspier-red outline-none"
+                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-labstx-orange outline-none"
                         />
                     </InputGroup>
-
-                    <div className="flex items-center gap-2 mb-4">
+                    <div className="flex items-center gap-2 mb-8">
                         <input
                             type="checkbox"
                             id="minimap"
                             checked={settings.minimap}
                             onChange={(e) => onUpdateSettings('minimap', e.target.checked)}
-                            className="rounded border-gray-600 bg-caspier-black text-caspier-red focus:ring-caspier-red"
+                            className="rounded border-caspier-border bg-caspier-black text-labstx-orange focus:ring-labstx-orange"
                         />
-                        <label htmlFor="minimap" className="text-sm text-caspier-text">Show Minimap</label>
+                        <label htmlFor="minimap" className="text-sm text-caspier-muted font-bold">Show Minimap</label>
                     </div>
 
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-caspier-border pb-2">Compiler Configuration</h3>
-
-                    <div className="flex items-center gap-2 mb-2">
-                        <input
-                            type="checkbox"
-                            id="optimization"
-                            checked={settings.enableOptimization}
-                            onChange={(e) => onUpdateSettings('enableOptimization', e.target.checked)}
-                            className="rounded border-gray-600 bg-caspier-black text-caspier-red focus:ring-caspier-red"
-                        />
-                        <label htmlFor="optimization" className="text-sm text-caspier-text">Enable Optimization</label>
-                    </div>
-
-                    <div className="flex items-center gap-2 mb-4">
-                        <input
-                            type="checkbox"
-                            id="autoCompile"
-                            checked={settings.autoCompile}
-                            onChange={(e) => onUpdateSettings('autoCompile', e.target.checked)}
-                            className="rounded border-gray-600 bg-caspier-black text-caspier-red focus:ring-caspier-red"
-                        />
-                        <label htmlFor="autoCompile" className="text-sm text-caspier-text">Auto Compile</label>
-                    </div>
-
-                    <h3 className="text-caspier-red font-bold text-xs uppercase mb-4 mt-8 border-b border-caspier-border pb-2">AI Configuration</h3>
-
+                    <h3 className="text-labstx-orange font-black text-[10px] uppercase mb-4 tracking-widest border-b border-caspier-border pb-2">AI Configuration</h3>
                     <InputGroup label="AI Model">
                         <select
                             value={settings.aiModel}
                             onChange={(e) => onUpdateSettings('aiModel', e.target.value)}
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-caspier-red outline-none"
+                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-labstx-orange outline-none"
                         >
-                            <option value="openai/gpt-4o">GPT-4o (Paid)</option>
-                            <option value="openai/gpt-4o-mini">GPT-4o Mini (Paid)</option>
-                            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Paid)</option>
-                            <option value="google/gemini-pro-1.5">Gemini Pro 1.5 (Paid)</option>
-                            <option value="meta-llama/llama-3.1-405b">Llama 3.1 405B (Paid)</option>
-                            <optgroup label="Free Models (OpenRouter)">
-                                <option value="liquid/lfm-2.5-1.2b-thinking:free">Liquid LFM 2.5 Thinking (Free)</option>
-                                <option value="liquid/lfm-2.5-1.2b-instruct:free">Liquid LFM 2.5 Instruct (Free)</option>
-                                <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron 3 Nano (Free)</option>
-                                <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen 3 Next 80B (Free)</option>
-                                <option value="google/gemini-flash-1.5:free">Gemini Flash 1.5 (Free)</option>
-                                <option value="meta-llama/llama-3.1-8b-instruct:free">Llama 3.1 8B (Free)</option>
-                                <option value="mistralai/pixtral-12b:free">Pixtral 12B (Free)</option>
-                                <option value="qwen/qwen-2.5-72b-instruct:free">Qwen 2.5 72B (Free)</option>
-                                <option value="microsoft/phi-3-mini-128k-instruct:free">Phi-3 Mini (Free)</option>
-                                <option value="huggingfaceh4/zephyr-7b-beta:free">Zephyr 7B Beta (Free)</option>
+                            <option value="google/gemini-2.0-flash">Gemini 2.0 Flash</option>
+                            <optgroup label="Free Models">
+                                <option value="liquid/lfm-2.5-1.2b:free">Liquid LFM 2.5</option>
                             </optgroup>
                         </select>
                     </InputGroup>
-
-                    <InputGroup label="OpenRouter API Key">
+                    <InputGroup label="API Key">
                         <input
                             type="password"
                             value={settings.aiApiKey}
                             onChange={(e) => onUpdateSettings('aiApiKey', e.target.value)}
                             placeholder="sk-or-v1-..."
-                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-caspier-red outline-none"
+                            className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-sm focus:border-labstx-orange outline-none"
                         />
                     </InputGroup>
-                    <p className="text-[10px] text-caspier-muted mt-1 italic">
-                        Get your key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-caspier-red hover:underline">openrouter.ai</a>
-                    </p>
-
                 </div>
-            </div>
-        );
-    }
+            )}
+        </div>
+    );
 
     const renderPlaceholder = () => (
-        <div className="flex flex-col p-4 text-caspier-muted text-sm">
-            <h2 className="text-caspier-text font-bold uppercase tracking-wider mb-4 border-b border-caspier-border pb-2">{activeView}</h2>
-            <p>This view is not implemented in the demo.</p>
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-caspier-border bg-caspier-black">
+                <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">{activeView}</h2>
+            </div>
+            <div className="p-4 text-caspier-muted text-sm italic">This view is currently under development.</div>
         </div>
     );
 
     const renderContent = () => {
-        const activeFile = activeFileId ? findFile(files, activeFileId) : null;
-        const contractCode = activeFile?.content || '';
-        const contractName = activeFile?.name || '';
-
         switch (activeView) {
             case ActivityView.EXPLORER: return renderExplorer();
             case ActivityView.SEARCH: return renderSearch();
             case ActivityView.GIT: return renderGit();
             case ActivityView.DEPLOY: return renderDeploy();
-            case ActivityView.DEBUG: return (
-                <DebugPanel
-                    compilationResult={compilationResult}
-                    contractCode={contractCode}
-                    contractName={contractName}
-                    theme={theme}
-                />
-            );
+            case ActivityView.DEBUG: {
+                const activeFile = activeFileId ? findFile(files, activeFileId) : null;
+                return (
+                    <DebugPanel
+                        compilationResult={compilationResult}
+                        contractCode={activeFile?.content || ''}
+                        contractName={activeFile?.name || ''}
+                        theme={theme}
+                    />
+                );
+            }
             case ActivityView.SETTINGS: return renderSettings();
             default: return renderPlaceholder();
         }
     };
 
     return (
-        <div style={{ width }} className="flex-shrink-0 bg-caspier-dark border-r border-caspier-border flex flex-col h-full overflow-hidden">
+        <div style={{ width }} className="relative flex-shrink-0 bg-caspier-dark border-r border-caspier-border flex flex-col h-full overflow-hidden">
             {renderContent()}
+
+            {/* New Project Dialog */}
+            <NewProjectModal
+                isOpen={isProjectModalOpen}
+                onClose={() => setIsProjectModalOpen(false)}
+                onLoadTemplate={handleLoadTemplate}
+                onCreateBlank={() => {
+                    if (onCreateBlank) onCreateBlank();
+                    setIsProjectModalOpen(false);
+                }}
+                onImport={() => {
+                    if (onImport) onImport();
+                    setIsProjectModalOpen(false);
+                }}
+            />
         </div>
     );
 };

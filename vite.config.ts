@@ -12,17 +12,17 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api/clarity': {
-          target: 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
         '/api/auth': {
-          target: 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
         '/api/github': {
-          target: 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },
@@ -67,15 +67,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      // Increase chunk warning limit to 1.5 MB to avoid warnings
       chunkSizeWarningLimit: 1500,
-
       rollupOptions: {
         output: {
-          // Split casper-js-sdk into its own chunk
           manualChunks: {
             'casper-sdk': ['casper-js-sdk'],
-            // Optional: split react/react-dom to another chunk
             'react-vendor': ['react', 'react-dom'],
           },
         },

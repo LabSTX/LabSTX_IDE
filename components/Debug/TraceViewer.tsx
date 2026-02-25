@@ -32,7 +32,7 @@ const TraceViewer: React.FC<TraceViewerProps> = ({ contractCode, contractName, t
         return (
             <div className="p-6 space-y-4">
                 {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="h-10 bg-caspier-panel/20 animate-pulse rounded border border-caspier-border/30" />
+                    <div key={i} className="h-10 bg-caspier-panel/20 animate-pulse rounded border border-caspier-border" />
                 ))}
             </div>
         );
@@ -62,7 +62,7 @@ const TraceViewer: React.FC<TraceViewerProps> = ({ contractCode, contractName, t
                     </div>
                 </div>
             ) : (
-                <div className="space-y-0.5 border-l border-caspier-border/30 ml-2">
+                <div className="space-y-0.5 border-l border-caspier-border ml-2">
                     {trace.map((step, idx) => (
                         <div
                             key={idx}

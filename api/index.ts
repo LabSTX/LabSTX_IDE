@@ -8,9 +8,11 @@ import { promisify } from 'util';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+const __apiDir = path.dirname(fileURLToPath(import.meta.url));
 const execPromise = promisify(exec);
 const app = express();
 app.use(cors());
@@ -23,6 +25,23 @@ const DEPLOYER = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
 // Storage for REPL history per session
 const replHistory: string[] = [];
 let activeContract: { name: string; code: string } | null = null;
+
+// Determine the path to the Clarinet binary
+const getClarinetPath = () => {
+    // Check 1: Adjacent bin folder (standalone deployment)
+    const localBin = path.join(__apiDir, 'bin', 'clarinet');
+    if (fs.existsSync(localBin)) return localBin;
+
+    // Check 2: Process CWD bin (common for some hosting)
+    const cwdBin = path.join(process.cwd(), 'bin', 'clarinet');
+    if (fs.existsSync(cwdBin)) return cwdBin;
+
+    // Fallback: System path
+    return 'clarinet';
+};
+
+const CLARINET_CMD = getClarinetPath();
+console.log(`[CLI] Using Clarinet command: ${CLARINET_CMD}`);
 
 /**
  * Creates a temporary Clarinet project for a specific operation
@@ -73,14 +92,13 @@ app.post('/api/clarity/check', async (req, res) => {
         let errors: string[] = [];
 
         try {
-            const { stdout, stderr } = await execPromise(`clarinet check`, { cwd: projectDir });
+            const { stdout, stderr } = await execPromise(`${CLARINET_CMD} check`, { cwd: projectDir });
             // Combine stdout and stderr for a full terminal-like log
             output = (stdout || "") + (stderr || "");
             success = true;
         } catch (err: any) {
             success = false;
             output = (err.stdout || "") + (err.stderr || "");
-            // Extract errors for the 'Problems' tab, but keep 'output' for the full log
             const errLines = output.split('\n')
                 .filter((l: string) => l.includes('error:') || l.includes('syntax error'));
             errors = errLines.length > 0 ? errLines : [err.message || "Check failed"];
@@ -117,7 +135,7 @@ app.post('/api/clarity/execute', async (req, res) => {
 
         console.log(`[CLI] Executing snippet: ${snippet}`);
 
-        const { stdout, stderr } = await execPromise(`clarinet console < repl_input.clar`, { cwd: projectDir });
+        const { stdout, stderr } = await execPromise(`${CLARINET_CMD} console < repl_input.clar`, { cwd: projectDir });
         const combinedOutput = stdout + (stderr || "");
         const lines = combinedOutput.split('\n');
 
@@ -126,8 +144,6 @@ app.post('/api/clarity/execute', async (req, res) => {
             const errorMatch = combinedOutput.match(/error: .+/g);
             result = errorMatch ? errorMatch[errorMatch.length - 1] : "Error occurred";
         } else {
-            // Find the result of the ACTUAL snippet (which is before ::get_assets)
-            // The output of console has lines like ">> expression" and then the result
             const snippetLine = lines.findIndex(l => l.includes(`>> ${snippet}`));
             if (snippetLine !== -1 && lines[snippetLine + 1]) {
                 result = lines[snippetLine + 1].trim();
@@ -161,17 +177,15 @@ app.post('/api/clarity/state', async (req, res) => {
         const contracts = activeContract ? [activeContract] : [];
         projectDir = await createTempProject(contracts);
 
-        // Extract assets and some state info
         const script = '::get_assets\n';
         const scriptPath = path.join(projectDir, 'state_input.clar');
         fs.writeFileSync(scriptPath, script);
 
-        const { stdout } = await execPromise(`clarinet console < state_input.clar`, { cwd: projectDir });
+        const { stdout } = await execPromise(`${CLARINET_CMD} console < state_input.clar`, { cwd: projectDir });
 
         const lines = stdout.split('\n');
         const state: any[] = [];
 
-        // Parse asset balances
         lines.forEach(line => {
             if (line.includes('Asset balance')) {
                 const match = line.match(/Asset balance (.+): (.+)/);
@@ -204,13 +218,12 @@ app.post('/api/clarity/terminal', async (req, res) => {
 
         console.log(`[CLI] Terminal command: ${command}`);
 
-        // Extract the actual command if it's 'clarinet test' etc.
-        // We only allow clarinet commands for safety in this demo
         if (!command.trim().startsWith('clarinet')) {
             return res.json({ success: false, output: 'Only clarinet commands are allowed.' });
         }
 
-        const { stdout, stderr } = await execPromise(command, { cwd: projectDir });
+        const finalCommand = command.replace(/^clarinet/, CLARINET_CMD);
+        const { stdout, stderr } = await execPromise(finalCommand, { cwd: projectDir });
         res.json({
             success: true,
             output: stdout + (stderr || "")
@@ -218,7 +231,7 @@ app.post('/api/clarity/terminal', async (req, res) => {
     } catch (error: any) {
         res.json({
             success: false,
-            output: error.stdout + (error.stderr || "") || error.message
+            output: (error.stdout || "") + (error.stderr || "") || error.message
         });
     } finally {
         if (projectDir) fs.rmSync(projectDir, { recursive: true, force: true });
@@ -230,7 +243,6 @@ app.post('/api/clarity/terminal', async (req, res) => {
 
 const REPO_ROOT = process.cwd();
 
-// Get Git Status
 app.get('/api/git/status', async (req, res) => {
     try {
         const { stdout: statusOut } = await execPromise('git status --porcelain', { cwd: REPO_ROOT });
@@ -245,7 +257,6 @@ app.get('/api/git/status', async (req, res) => {
             const status = line.substring(0, 2);
             const file = line.substring(3).trim();
 
-            // X is status of index, Y is status of work tree
             if (status[0] !== ' ' && status[0] !== '?') {
                 stagedFiles.push(file);
             }
@@ -254,7 +265,7 @@ app.get('/api/git/status', async (req, res) => {
             }
             if (status === '??') {
                 untrackedFiles.push(file);
-                modifiedFiles.push(file); // Show untracked as modified/changes
+                modifiedFiles.push(file);
             }
         });
 
@@ -270,7 +281,6 @@ app.get('/api/git/status', async (req, res) => {
     }
 });
 
-// Stage File
 app.post('/api/git/stage', async (req, res) => {
     const { filePath } = req.body;
     try {
@@ -281,7 +291,6 @@ app.post('/api/git/stage', async (req, res) => {
     }
 });
 
-// Unstage File
 app.post('/api/git/unstage', async (req, res) => {
     const { filePath } = req.body;
     try {
@@ -292,7 +301,6 @@ app.post('/api/git/unstage', async (req, res) => {
     }
 });
 
-// Discard Changes
 app.post('/api/git/discard', async (req, res) => {
     const { filePath } = req.body;
     try {
@@ -303,7 +311,6 @@ app.post('/api/git/discard', async (req, res) => {
     }
 });
 
-// Commit
 app.post('/api/git/commit', async (req, res) => {
     const { message } = req.body;
     try {
@@ -314,13 +321,11 @@ app.post('/api/git/commit', async (req, res) => {
     }
 });
 
-// Get History/Log
 app.get('/api/git/log', async (req, res) => {
     try {
         const { stdout } = await execPromise('git log -n 20 --pretty=format:"%H|%an|%at|%s|%D" --all', { cwd: REPO_ROOT });
         const commits = stdout.split('\n').filter(Boolean).map(line => {
             const [hash, author, date, message, refNames] = line.split('|');
-            // Extract branch name from refNames if possible
             let branch = 'main';
             if (refNames) {
                 const branchMatch = refNames.match(/-> ([\w/-]+)/) || refNames.match(/base\/([\w/-]+)/);
@@ -346,7 +351,6 @@ app.get('/api/git/log', async (req, res) => {
     }
 });
 
-// Get Branches
 app.get('/api/git/branches', async (req, res) => {
     try {
         const { stdout } = await execPromise('git branch --format="%(refname:short)"', { cwd: REPO_ROOT });
@@ -357,7 +361,6 @@ app.get('/api/git/branches', async (req, res) => {
     }
 });
 
-// Switch Branch
 app.post('/api/git/checkout', async (req, res) => {
     const { branch, create } = req.body;
     try {
@@ -413,7 +416,7 @@ app.get('/api/auth/github/callback', async (req, res) => {
 
         const encodedCookie = Buffer.from(cookieValue).toString('base64');
         res.setHeader('Set-Cookie', `github_auth=${encodedCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
-        res.redirect('http://localhost:3000/'); // Redirect back to frontend
+        res.redirect('http://localhost:3000/');
     } catch (error) {
         console.error('GitHub OAuth error:', error);
         res.redirect('/?error=oauth_failed');
@@ -495,10 +498,9 @@ app.post('/api/github/clone', async (req, res) => {
         const files = (tree.tree as any[]).filter(item => item.type === 'blob');
         const fileContents: Record<string, string> = {};
 
-        // Fetch up to 50 files in parallel for better performance
         const fileBatch = files.slice(0, 50);
         await Promise.all(fileBatch.map(async (file: any) => {
-            if (file.size > 500000) return; // Skip files > 500KB
+            if (file.size > 500000) return;
             if (/\.(png|jpg|jpeg|gif|ico|pdf|zip|tar|gz|woff|woff2|ttf|eot)$/i.test(file.path)) return;
 
             try {

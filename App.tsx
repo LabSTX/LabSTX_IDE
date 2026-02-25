@@ -16,6 +16,7 @@ import { DeploymentNotification } from './components/UI/DeploymentNotification';
 import HomeTab from './components/UI/HomeTab';
 import AbiPreviewTab from './components/UI/AbiPreviewTab';
 import MarkdownPreviewTab from './components/UI/MarkdownPreviewTab';
+import EmptyState from './components/Layout/EmptyState';
 import { ClarityCompiler } from './services/stacks/compiler';
 import { StacksWalletService } from './services/stacks/wallet';
 import JSZip from 'jszip';
@@ -31,7 +32,7 @@ function App() {
     }, [activeView]);
 
     // Theme State
-    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+    const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
     // Workspace State with localStorage persistence
     const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>(() => {
@@ -98,6 +99,7 @@ function App() {
         connected: false
     });
     const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([]);
+    const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
     // Deployment Notification State
     const [notification, setNotification] = useState<{ deployHash: string; network: string, contractName?: string } | null>(null);
@@ -1296,12 +1298,16 @@ function App() {
                             compilationResult={compilationResult}
                             onDeploySuccess={handleDeploySuccess}
                             onLoadTemplate={handleLoadTemplate}
+                            onCreateBlank={handleCreateWorkspace}
+                            onImport={handleImportWorkspace}
+                            isProjectModalOpen={isProjectModalOpen}
+                            setIsProjectModalOpen={setIsProjectModalOpen}
                             onAddTerminalLine={addTerminalLine}
                             theme={theme}
                         />
                         {/* Left Resizer */}
                         <div
-                            className="w-1 bg-caspier-dark hover:bg-caspier-red cursor-col-resize z-10 transition-colors delay-150"
+                            className="w-1 bg-caspier-dark hover:bg-labstx-orange cursor-col-resize z-10 transition-colors delay-150"
                             onMouseDown={startResizing('left')}
                         />
                     </>
@@ -1322,7 +1328,7 @@ function App() {
                         dirtyFileIds={dirtyFileIds}
                     />
 
-                    <div className="h-9 flex items-center bg-caspier-black border-b border-caspier-border px-4 flex-shrink-0">
+                    <div className="h-9 flex items-center bg-caspier-black rounded-b-lg border-b border-x border-caspier-border px-4 flex-shrink-0">
                         <div className="flex w-full items-center text-sm">
                             <span className="text-caspier-muted text-xs mr-2">{activeFileId ? findFile(files, activeFileId)?.name : ''}</span>
                         </div>
@@ -1339,7 +1345,7 @@ function App() {
                                     if (e.key === 'Escape') handleSearchChange('');
                                 }}
                                 placeholder="Find in code…"
-                                className="h-6 pl-6 pr-6 text-xs rounded bg-caspier-dark border border-caspier-border text-caspier-text placeholder-caspier-muted focus:outline-none focus:border-caspier-red transition-all w-32 focus:w-48"
+                                className="h-6 pl-6 pr-6 text-xs rounded bg-caspier-dark border border-caspier-border text-caspier-text placeholder-caspier-muted focus:outline-none focus:border-labstx-orange transition-all w-32 focus:w-48"
                                 style={{ transition: 'width 0.2s ease' }}
                                 title="Find in editor (Ctrl+F)"
                             />
@@ -1408,20 +1414,7 @@ function App() {
                         </div>
 
                         <div className="flex w-fit items-center gap-1.5 px-2 border-l border-caspier-border ml-2">
-                            <button
-                                onClick={handleEditorUndo}
-                                className="p-1.5 text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover rounded transition-colors"
-                                title="Undo (Ctrl+Z)"
-                            >
-                                <UndoIcon className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                                onClick={handleEditorRedo}
-                                className="p-1.5 text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover rounded transition-colors"
-                                title="Redo (Ctrl+Y)"
-                            >
-                                <RedoIcon className="w-3.5 h-3.5" />
-                            </button>
+
                             <button
                                 onClick={handleSaveFile}
                                 disabled={!activeFileId || !dirtyFileIds.includes(activeFileId)}
@@ -1472,7 +1465,20 @@ function App() {
                                     theme={theme}
                                 />
                             );
-                        })() : (
+                        })() : !activeFileId ? (
+                            <EmptyState
+                                onCreateFile={() => handleCreateNode('root', 'file', `contract-${Date.now()}.clar`)}
+                                onOpenProject={() => setIsProjectModalOpen(true)}
+                                onToggleSearch={() => {
+                                    const input = document.getElementById('editor-search-input');
+                                    if (input) input.focus();
+                                }}
+                                onToggleCommandPalette={() => {
+                                    // Could trigger a command palette if implemented
+                                }}
+                                theme={theme}
+                            />
+                        ) : (
                             <CodeEditor
                                 code={activeContent}
                                 language={activeLanguage}
@@ -1490,7 +1496,7 @@ function App() {
                         <>
                             {/* Terminal Resizer */}
                             <div
-                                className="h-1 bg-caspier-dark hover:bg-caspier-red cursor-row-resize z-10 transition-colors delay-150"
+                                className="h-1 bg-caspier-dark hover:bg-labstx-orange cursor-row-resize z-10 transition-colors delay-150"
                                 onMouseDown={startTerminalResizing}
                             />
                             <TerminalPanel
@@ -1511,7 +1517,7 @@ function App() {
                     <>
                         {/* Right Resizer */}
                         <div
-                            className="w-1 bg-caspier-dark hover:bg-caspier-red cursor-col-resize z-10 transition-colors delay-150"
+                            className="w-1 bg-caspier-dark hover:bg-labstx-orange cursor-col-resize z-10 transition-colors delay-150"
                             onMouseDown={startResizing('right')}
                         />
                         <SidebarRight
@@ -1528,7 +1534,7 @@ function App() {
             </div>
 
             {/* Status Bar */}
-            <div className="h-6 bg-caspier-red text-caspier-black flex justify-between items-center px-3 text-xs font-bold select-none flex-shrink-0">
+            <div className="h-6 bg-labstx-orange text-white flex justify-between items-center px-3 text-xs font-bold select-none flex-shrink-0">
                 <div className="flex gap-4">
                     <span>{gitState.branch}*</span>
                     <span>{problems.length} problems</span>
