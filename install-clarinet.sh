@@ -26,7 +26,7 @@ fi
 
 mkdir -p ./bin
 echo "📥 Downloading Clarinet $CLARINET_VERSION..."
-curl -L "https://github.com/hirosystems/clarinet/releases/download/$CLARINET_VERSION/$BINARY_NAME" -o clarinet.tar.gz
+curl -L "https://github.com/stx-labs/clarinet/releases/download/$CLARINET_VERSION/$BINARY_NAME" -o clarinet.tar.gz
 
 echo "📦 Extracting..."
 tar -xzf clarinet.tar.gz
