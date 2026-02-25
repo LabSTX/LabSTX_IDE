@@ -12,17 +12,17 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/ide-api/clarity': {
-          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },
         '/ide-api/auth': {
-          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },
         '/ide-api/github': {
-          target: env.VITE_BACKEND_URL || 'http://localhost:5001',
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },
