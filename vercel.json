@@ -5,8 +5,24 @@
     "framework": "vite",
     "rewrites": [
         {
-            "source": "/ide-api/rpc",
-            "destination": "/ide-api/rpc.js"
+            "source": "/ide-api/rpc/:path*",
+            "destination": "https://node.testnet.casper.network/rpc/:path*"
+        },
+        {
+            "source": "/casper-rpc/:path*",
+            "destination": "https://rpc.testnet.casperlabs.io/:path*"
+        },
+        {
+            "source": "/casper-node-rpc/:path*",
+            "destination": "https://node-clarity-testnet.make.services/:path*"
+        },
+        {
+            "source": "/ide-api/:path*",
+            "destination": "https://labstx-ide-api.onrender.com/ide-api/:path*"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/"
         }
     ],
     "headers": [
