@@ -835,6 +835,12 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                             <option value="google/gemini-2.0-flash">Gemini 2.0 Flash</option>
                             <optgroup label="Free Models">
                                 <option value="liquid/lfm-2.5-1.2b:free">Liquid LFM 2.5</option>
+                                <option value="stepfun/step-3.5-flash:free">StepFun Step 3.5 Flash</option>
+                                <option value="arcee-ai/trinity-large-preview:free">Arcee Trinity Large Preview</option>
+                                <option value="liquid/lfm-2.5-1.2b-thinking:free">Liquid LFM 2.5 Thinking</option>
+                                <option value="liquid/lfm-2.5-1.2b-instruct:free">Liquid LFM 2.5 Instruct</option>
+                                <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron 3 Nano 30B</option>
+                                <option value="arcee-ai/trinity-mini:free">Arcee Trinity Mini</option>
                             </optgroup>
                         </select>
                     </InputGroup>
