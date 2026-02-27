@@ -219,8 +219,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ terminalLines, outputLine
                                             onClick={() => copyProblem(prob)}
                                             title="Copy error to clipboard"
                                             className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase transition-all border ${copiedId === prob.id
-                                                    ? 'border-green-600/40 text-green-400 bg-green-900/20'
-                                                    : 'border-caspier-border text-caspier-muted hover:text-caspier-text hover:border-caspier-text/30 hover:bg-caspier-hover'
+                                                ? 'border-green-600/40 text-green-400 bg-green-900/20'
+                                                : 'border-caspier-border text-caspier-muted hover:text-caspier-text hover:border-caspier-text/30 hover:bg-caspier-hover'
                                                 }`}
                                         >
                                             {copiedId === prob.id ? (
@@ -256,7 +256,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ terminalLines, outputLine
     );
 
     return (
-        <div className="bg-caspier-black border-t border-caspier-border w-full flex flex-col" style={{ height: `${height}px` }}>
+        <div id="terminal-panel" className="bg-caspier-black border-t border-caspier-border w-full flex flex-col" style={{ height: `${height}px` }}>
             <div className="flex border-b border-caspier-border bg-caspier-panel h-8 justify-between items-center pr-2">
                 <div className="flex h-full">
                     {(['TERMINAL', 'OUTPUT', 'PROBLEMS'] as TerminalTab[]).map((tab) => (
@@ -280,8 +280,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ terminalLines, outputLine
                         <button
                             onClick={copyAllProblems}
                             className={`p-1 px-2 flex items-center gap-1.5 transition-colors text-[10px] uppercase font-bold group ${copiedAll
-                                    ? 'text-green-400'
-                                    : 'text-caspier-muted hover:text-caspier-text'
+                                ? 'text-green-400'
+                                : 'text-caspier-muted hover:text-caspier-text'
                                 }`}
                             title="Copy all problems to clipboard"
                         >

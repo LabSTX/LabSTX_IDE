@@ -120,7 +120,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   if (openFileIds.length === 0) return null;
 
   return (
-    <div className="flex bg-caspier-black border-b border-caspier-border overflow-x-auto scrollbar-hide select-none transition-all">
+    <div id="editor-tabs" className="flex bg-caspier-black border-b border-caspier-border overflow-x-auto scrollbar-hide select-none transition-all">
       {openFileIds.map((id) => {
         const file = findFileDetails(files, id);
         if (!file) return null;

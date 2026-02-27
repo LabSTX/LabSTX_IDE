@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon, BugIcon } from '../UI/Icons';
 import { GitHubAuth } from '../GitHub/GitHubAuth';
 import { PublicCloneModal } from '../GitHub/PublicCloneModal';
+import { BugReportModal } from '../UI/BugReportModal';
 
 interface HeaderProps {
   currentWorkspace: string;
@@ -45,6 +46,8 @@ const Header: React.FC<HeaderProps> = ({
   onGitHubGistCreated,
   workspaceFiles
 }) => {
+  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+
   return (
     <div className="h-12 bg-caspier-black border-b border-caspier-border flex items-center px-4 justify-between shrink-0 select-none">
       <div className="flex items-center gap-6">
@@ -73,7 +76,7 @@ const Header: React.FC<HeaderProps> = ({
         <div className="h-4 w-[1px] bg-caspier-border"></div>
 
         {/* Workspace Selector */}
-        <div className="flex items-center gap-3">
+        <div id="workspace-selector" className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-caspier-dark border border-caspier-border px-3 py-1.5 rounded-sm hover:border-caspier-muted transition-colors relative group">
             <GridIcon className="w-4 h-4 text-caspier-red" />
             <span className="text-xs text-caspier-muted font-bold uppercase tracking-wide">Workspace:</span>
@@ -139,11 +142,24 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <p className='flex items-center gap-x-1 text-emerald-600 border border-emerald-600 rounded-full px-2 py-1 text-xs font-bold'><BugIcon className='w-4 h-4' /> BETA</p>
-      {/* Right Side - Links/Placeholders */}
-      <div className="flex items-center gap-4 text-xs text-caspier-muted font-medium">
+      <div className="flex items-center gap-3">
+        <p className='flex items-center gap-x-1 text-emerald-600 border border-emerald-600 rounded-full px-2 py-1 text-xs font-bold'>
+          <BugIcon className='w-4 h-4' /> BETA
+        </p>
+        <button
+          onClick={() => setIsBugModalOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 rounded transition-all duration-200 group"
+          title="Report a bug or share feedback"
+        >
+          <BugIcon className="w-3 h-3 text-red-500 group-hover:animate-pulse" />
+          Report Bug
+        </button>
+      </div>
+
+      {/* Right Side Controls */}
+      <div className="flex items-center gap-3">
         {/* Layout Toggles */}
-        <div className="flex items-center gap-1 border-r border-caspier-border pr-4 mr-2">
+        <div id="layout-controls" className="flex items-center gap-1 border-r border-caspier-border pr-2">
           <button
             onClick={toggleLeftSidebar}
             className={`p-1.5 rounded hover:bg-caspier-hover transition-colors ${isLeftSidebarVisible ? 'text-caspier-text' : 'text-caspier-muted opacity-50'}`}
@@ -166,7 +182,8 @@ const Header: React.FC<HeaderProps> = ({
             <LayoutSidebarRightIcon className="w-4 h-4" />
           </button>
         </div>
-        {/* theme toggle */}
+
+        {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
           className="p-1.5 hover:bg-caspier-hover rounded-full text-caspier-text transition-colors"
@@ -184,7 +201,12 @@ const Header: React.FC<HeaderProps> = ({
       </div>
 
       <PublicCloneModal onClone={onGitHubClone || (() => { })} />
-    </div>
+      <BugReportModal
+        isOpen={isBugModalOpen}
+        onClose={() => setIsBugModalOpen(false)}
+        theme={theme}
+      />
+    </div >
   );
 };
 

@@ -113,6 +113,7 @@ export interface CompilationResult {
   errors?: string[];
   warnings?: string[];
   metadata?: ContractMetadata;
+  output?: string;
 }
 
 export interface ContractMetadata {
@@ -127,6 +128,10 @@ export interface WalletConnection {
   address?: string;
   connected: boolean;
   network?: string;
+  addresses?: {
+    mainnet: string;
+    testnet: string;
+  };
 }
 
 export interface DeployConfig {

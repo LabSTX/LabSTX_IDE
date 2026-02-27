@@ -34,6 +34,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
     <div className="w-12 bg-caspier-black border-r border-caspier-border flex flex-col items-center py-4 justify-between h-full z-20 flex-shrink-0">
       <div className="flex flex-col gap-6 w-full items-center pt-2">
         <button
+          id="home-button"
           onClick={onOpenHome}
           className="p-2 w-full flex justify-center text-caspier-muted hover:text-labstx-orange transition-colors group"
           title="Home"
@@ -46,6 +47,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
         {items.map((item) => (
           <button
             key={item.view}
+            id={`view-${item.view.toLowerCase()}`}
             onClick={() => handleItemClick(item.view)}
             className={`p-2 w-full flex justify-center transition-colors relative group ${activeView === item.view && isSidebarVisible ? 'text-labstx-orange' : 'text-caspier-muted hover:text-caspier-text'
               }`}
@@ -61,6 +63,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
 
       <div className="flex flex-col gap-4 pb-2 w-full items-center">
         <button
+          id="view-settings"
           className="p-2 text-caspier-muted hover:text-caspier-text"
           onClick={() => setActiveView(ActivityView.SETTINGS)}
         >

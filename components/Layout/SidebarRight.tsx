@@ -305,7 +305,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
             if (headerMatch) {
                 const level = headerMatch[1].length;
                 const content = headerMatch[2];
-                const HeaderTag = `h${Math.min(level, 6)}` as keyof JSX.IntrinsicElements;
+                const HeaderTag = `h${Math.min(level, 6)}` as any;
                 const classes = ["", "text-2xl", "text-xl", "text-lg", "text-base", "text-sm", "text-xs"][level] + " font-bold mt-6 mb-3 text-caspier-text tracking-tight";
                 result.push(<HeaderTag key={lineIndex} className={classes}>{formatInlineTextInline(content)}</HeaderTag>);
                 return;
@@ -397,7 +397,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
     };
 
     return (
-        <div style={{ width }} className="flex-shrink-0 bg-caspier-black border-l border-caspier-border flex flex-col h-full relative overflow-hidden">
+        <div id="ai-assistant-sidebar" style={{ width }} className="flex-shrink-0 bg-caspier-black border-l border-caspier-border flex flex-col h-full relative overflow-hidden">
             {/* Glossy Header */}
             <div className="h-14 px-4 flex items-center justify-between bg-caspier-panel/30 border-b border-caspier-border backdrop-blur-xl z-20">
                 <div className="flex items-center gap-3">

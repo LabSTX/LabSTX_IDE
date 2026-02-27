@@ -20,6 +20,7 @@ import EmptyState from './components/Layout/EmptyState';
 import { ClarityCompiler } from './services/stacks/compiler';
 import { StacksWalletService } from './services/stacks/wallet';
 import JSZip from 'jszip';
+import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
 
 function App() {
     const [activeView, setActiveView] = useState<ActivityView>(() => {
@@ -166,6 +167,87 @@ function App() {
     const toggleLeftSidebar = () => setIsLeftSidebarVisible(!isLeftSidebarVisible);
     const toggleRightSidebar = () => setIsRightSidebarVisible(!isRightSidebarVisible);
     const toggleTerminal = () => setIsTerminalVisible(!isTerminalVisible);
+
+    // --- Onboarding Tour State ---
+    const [runTour, setRunTour] = useState(false);
+    const [tourSteps] = useState<Step[]>([
+        {
+            target: 'body',
+            content: (
+                <div className="text-left">
+                    <h3 className="text-lg font-bold text-labstx-orange mb-2">Welcome to LabSTX!</h3>
+                    <p>Let's take a quick tour of your new Clarity smart contract development environment.</p>
+                </div>
+            ),
+            placement: 'center',
+            disableBeacon: true,
+        },
+        {
+            target: '#workspace-selector',
+            content: 'Switch between different projects or create a new one here.',
+            placement: 'bottom',
+        },
+        {
+            target: '#home-button',
+            content: 'The Home view provides templates and walkthroughs to get you started quickly.',
+            placement: 'right',
+        },
+        {
+            target: '#view-explorer',
+            content: 'Manage your files and folders in the Explorer view.',
+            placement: 'right',
+        },
+        {
+            target: '#create-project-button',
+            content: 'Quickly start a new project from building blocks.',
+            placement: 'right',
+        },
+        {
+            target: '#editor-tabs',
+            content: 'Switch between open files using these tabs.',
+            placement: 'bottom',
+        },
+        {
+            target: '#check-button',
+            content: 'Run a syntax and logic check on your current Clarity contract.',
+            placement: 'bottom',
+        },
+        {
+            target: '#deploy-button',
+            content: 'Deploy your contracts to the Stacks network when you are ready.',
+            placement: 'bottom',
+        },
+        {
+            target: '#ai-assistant-button',
+            content: 'Open the AI Assistant to help you write and debug code.',
+            placement: 'left',
+        },
+        {
+            target: '#terminal-panel',
+            content: 'Interact with the Stacks blockchain and view logs in the terminal.',
+            placement: 'top',
+        },
+        {
+            target: '#layout-controls',
+            content: 'Customize your workspace by toggling sidebars and panels.',
+            placement: 'bottom',
+        }
+    ]);
+
+    useEffect(() => {
+        const hasSeenTour = localStorage.getItem('labstx_has_seen_tour');
+        if (!hasSeenTour) {
+            setRunTour(true);
+        }
+    }, []);
+
+    const handleTourCallback = (data: CallBackProps) => {
+        const { status } = data;
+        if ([STATUS.FINISHED, STATUS.SKIPPED].includes(status as any)) {
+            setRunTour(false);
+            localStorage.setItem('labstx_has_seen_tour', 'true');
+        }
+    };
 
     // Prevent data loss on reload
     useEffect(() => {
@@ -1376,6 +1458,7 @@ function App() {
                                 <span>Preview</span>
                             </Button>
                             <Button
+                                id="check-button"
                                 variant="primary"
                                 size="sm"
                                 onClick={handleCompile}
@@ -1386,6 +1469,7 @@ function App() {
                                 <span>Check</span>
                             </Button>
                             <Button
+                                id="debug-button"
                                 variant="secondary"
                                 size="sm"
                                 onClick={handleDebug}
@@ -1396,6 +1480,7 @@ function App() {
                                 <span>Debug</span>
                             </Button>
                             <Button
+                                id="deploy-button"
                                 variant="primary"
                                 size="sm"
                                 onClick={handleDeployView}
@@ -1405,6 +1490,7 @@ function App() {
                                 <span>Deploy</span>
                             </Button>
                             <button
+                                id="ai-assistant-button"
                                 onClick={toggleRightSidebar}
                                 className="text-caspier-muted hover:text-caspier-text p-1 ml-2 border border-transparent hover:border-caspier-border rounded"
                                 title="Open AI Assistant"
@@ -1540,12 +1626,59 @@ function App() {
                     <span>{problems.length} problems</span>
                 </div>
                 <div className="flex gap-4">
+                    <button
+                        onClick={() => setRunTour(true)}
+                        className="hover:underline cursor-pointer"
+                    >
+                        🚀 Start Tour
+                    </button>
                     <span>Ln 12, Col 4</span>
                     <span>UTF-8</span>
                     <span>{activeLanguage.toUpperCase()}</span>
                     <span>LabSTX v1.2.0</span>
                 </div>
             </div>
+
+            {/* Product Tour */}
+            <Joyride
+                steps={tourSteps}
+                run={runTour}
+                continuous
+                showProgress
+                showSkipButton
+                callback={handleTourCallback}
+                styles={{
+                    options: {
+                        primaryColor: '#F05023', // labstx-orange
+                        backgroundColor: '#1C1C1C',
+                        textColor: '#E0E0E0',
+                        arrowColor: '#1C1C1C',
+                        zIndex: 1000,
+                    },
+                    tooltipContainer: {
+                        textAlign: 'left',
+                        borderRadius: '12px',
+                        border: '1px solid #333',
+                        padding: '10px'
+                    },
+                    buttonNext: {
+                        borderRadius: '8px',
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                    },
+                    buttonBack: {
+                        marginRight: 10,
+                        fontSize: '12px',
+                        color: '#999'
+                    },
+                    buttonSkip: {
+                        fontSize: '12px',
+                        color: '#999'
+                    }
+                }}
+            />
 
             {/* Deployment Notification */}
             {notification && (

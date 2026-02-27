@@ -8,12 +8,14 @@ interface WalletConnectionProps {
   wallet: WalletConnection;
   onConnect: (wallet: WalletConnection) => void;
   onDisconnect: () => void;
+  network: 'testnet' | 'mainnet' | 'devnet';
 }
 
 const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   wallet,
   onConnect,
-  onDisconnect
+  onDisconnect,
+  network
 }) => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
     setConnecting(true);
     setError(null);
     try {
-      const connection = await StacksWalletService.connect();
+      const connection = await StacksWalletService.connect(network);
       onConnect(connection);
     } catch (err: any) {
       setError(err.message || 'Failed to connect Stacks wallet');
@@ -87,7 +89,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-widest text-caspier-muted font-medium">Network</p>
               <span className="text-xs font-bold text-caspier-text uppercase">
-                {wallet.network || 'mainnet'}
+                {wallet.address?.startsWith('ST') ? 'testnet' : 'mainnet'}
               </span>
             </div>
           </div>
@@ -109,8 +111,8 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
         onClick={handleConnect}
         disabled={connecting}
         className={`w-full h-11 font-bold uppercase tracking-widest text-xs transition-all ${!connecting
-            ? 'shadow-[4px_4px_0_0_rgba(79,70,229,0.3)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_rgba(79,70,229,0.4)]'
-            : 'opacity-70'
+          ? 'shadow-[4px_4px_0_0_rgba(79,70,229,0.3)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_rgba(79,70,229,0.4)]'
+          : 'opacity-70'
           }`}
         variant="primary"
       >

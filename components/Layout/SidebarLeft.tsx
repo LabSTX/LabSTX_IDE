@@ -405,7 +405,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     };
 
     const renderExplorer = () => (
-        <>
+        <div id="explorer-view" className="h-full flex flex-col">
             <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
                 <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">File Explorer</span>
                 <div className="flex gap-2">
@@ -449,6 +449,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
             {/* Create Project Button */}
             <div className="px-3 py-3 border-b border-caspier-border bg-caspier-black/40">
                 <button
+                    id="create-project-button"
                     onClick={() => setIsProjectModalOpen(true)}
                     className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-labstx-orange/10 hover:bg-labstx-orange text-labstx-orange hover:text-white border border-labstx-orange hover:border-labstx-orange rounded-full transition-all font-black text-[10px] uppercase tracking-widest group shadow-sm active:scale-[0.98]"
                 >
@@ -477,7 +478,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     />
                 ))}
             </div>
-        </>
+        </div>
     );
 
     const renderSearch = () => (
@@ -555,7 +556,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         const getColor = (lane: number) => branchColors[lane % branchColors.length];
 
         return (
-            <div className="flex flex-col h-full bg-caspier-dark">
+            <div id="git-view" className="flex flex-col h-full bg-caspier-dark">
                 <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
                     <div className="flex flex-col overflow-hidden">
                         <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase leading-none mb-1">Source Control</span>
@@ -756,7 +757,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     };
 
     const renderDeploy = () => (
-        <div className="flex flex-col h-full">
+        <div id="deploy-view-sidebar" className="flex flex-col h-full">
             <div className="p-4 border-b border-caspier-border bg-caspier-black">
                 <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Deploy & Interaction</h2>
             </div>
@@ -775,6 +776,8 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     onAddTerminalLine={onAddTerminalLine}
                     width={width}
                     theme={theme}
+                    settings={settings}
+                    onUpdateSettings={onUpdateSettings}
                 />
             )}
         </div>

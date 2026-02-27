@@ -11,7 +11,7 @@ export class StacksWalletService {
         icon: window.location.origin + '/logo.svg',
     };
 
-    static async connect(): Promise<WalletConnection> {
+    static async connect(networkType: string = 'testnet'): Promise<WalletConnection> {
         return new Promise((resolve, reject) => {
             authenticate({
                 appDetails: this.appDetails,
@@ -30,12 +30,28 @@ export class StacksWalletService {
                         type = 'leather';
                     }
 
+                    // Robust address extraction
+                    const profile = userData.profile || {};
+                    const stxAddresses = profile.stxAddress || {};
+
+                    const mainnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.mainnet;
+                    const testnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.testnet;
+
+                    // Final address to use for this connection
+                    const address = networkType === 'mainnet'
+                        ? (mainnetAddr || testnetAddr)
+                        : (testnetAddr || mainnetAddr);
+
                     resolve({
                         type,
                         connected: true,
-                        address: userData.profile.stxAddress.testnet, // Default to testnet
+                        address: address,
                         publicKey: userData.appPrivateKey,
-                        network: 'testnet'
+                        network: networkType,
+                        addresses: {
+                            mainnet: mainnetAddr || address,
+                            testnet: testnetAddr || address
+                        }
                     });
                 },
                 onCancel: () => {
@@ -56,18 +72,20 @@ export class StacksWalletService {
         return networkType === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
     }
 
-    static async getBalance(address: string, networkType: string): Promise<string> {
+    static async getBalance(address: string): Promise<string> {
         try {
-            const baseUrl = networkType === 'mainnet'
-                ? 'https://api.mainnet.hiro.so'
-                : 'https://api.testnet.hiro.so';
+            const baseUrl = address.startsWith('ST')
+                ? 'https://api.testnet.hiro.so'
+                : 'https://api.mainnet.hiro.so';
 
             const response = await fetch(`${baseUrl}/extended/v1/address/${address}/balances`);
             const data = await response.json();
 
             // Stx balance is in microstacks (uSTX)
             const stxBalance = data.stx.balance;
-            const formattedBalance = (parseInt(stxBalance) / 1000000).toFixed(2);
+            // Using BigInt for parsing large strings, then converting to Number for division
+            const microStacks = BigInt(stxBalance);
+            const formattedBalance = (Number(microStacks) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             return formattedBalance;
         } catch (error) {
             console.error('Failed to fetch balance:', error);
@@ -105,5 +123,14 @@ export class StacksWalletService {
             console.error('Failed to fetch contract interface:', error);
             return null;
         }
+    }
+
+    static async requestTestnetTokens(address: string): Promise<any> {
+        const response = await fetch('https://api.testnet.hiro.so/extended/v1/faucets/stx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address, stacking: false })
+        });
+        return await response.json();
     }
 }

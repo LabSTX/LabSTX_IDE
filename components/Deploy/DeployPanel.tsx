@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileNode, WalletConnection, DeployedContract, CompilationResult } from '../../types';
+import { FileNode, WalletConnection, DeployedContract, CompilationResult, ProjectSettings } from '../../types';
 import WalletConnectionComponent from './WalletConnection';
 import { Button } from '../UI/Button';
 import { RocketIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from '../UI/Icons';
@@ -24,6 +24,8 @@ interface DeployPanelProps {
   onAddTerminalLine?: (line: any) => void;
   width?: number;
   theme: 'dark' | 'light';
+  settings?: ProjectSettings;
+  onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
 }
 
 const DeployPanel: React.FC<DeployPanelProps> = ({
@@ -35,9 +37,19 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   onDeploySuccess,
   onAddTerminalLine,
   width = 320,
-  theme
+  theme,
+  settings,
+  onUpdateSettings
 }) => {
-  const [network, setNetwork] = useState<'testnet' | 'mainnet' | 'devnet'>('testnet');
+  // Use global settings network as source of truth
+  const network = settings?.network || 'testnet';
+
+  // Local function to update network (updates global settings)
+  const setNetwork = (newNet: 'testnet' | 'mainnet' | 'devnet') => {
+    if (onUpdateSettings) {
+      onUpdateSettings('network', newNet);
+    }
+  };
   const [deploying, setDeploying] = useState(false);
   const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string>('');
@@ -57,6 +69,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   const [entryPoint, setEntryPoint] = useState('');
   const [argumentsJson, setArgumentsJson] = useState('{}');
   const [keyName, setKeyName] = useState('');
+  const [requestingTokens, setRequestingTokens] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('labstx-deployed-contracts');
@@ -69,20 +82,45 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
   }, []);
 
+  // Sync wallet address with current network toggle
+  useEffect(() => {
+    if (wallet.connected && (wallet.addresses || wallet.address) && onWalletConnect) {
+      const correctAddress = network === 'mainnet'
+        ? (wallet.addresses?.mainnet || wallet.address || '')
+        : (wallet.addresses?.testnet || wallet.address || '');
+
+      if (wallet.address !== correctAddress || wallet.network !== network) {
+        console.log(`Syncing wallet: Using ${network} address ${correctAddress}`);
+        onWalletConnect({
+          ...wallet,
+          address: correctAddress,
+          network: network
+        });
+      }
+    }
+  }, [network, wallet.connected, wallet.addresses, wallet.address, wallet.network, onWalletConnect]);
+
   // Fetch balance
   useEffect(() => {
     const fetchBalance = async () => {
-      if (wallet.connected && wallet.address) {
-        const bal = await StacksWalletService.getBalance(wallet.address, network);
-        setBalance(bal);
+      if (wallet.connected) {
+        // Use the address matching the network to avoid fetching 0 for wrong principal
+        const addressToUse = network === 'mainnet'
+          ? (wallet.addresses?.mainnet || wallet.address)
+          : (wallet.addresses?.testnet || wallet.address);
+
+        if (addressToUse) {
+          const bal = await StacksWalletService.getBalance(addressToUse);
+          setBalance(bal);
+        }
       }
     };
     fetchBalance();
 
-    // Refresh balance every 30 seconds
-    const interval = setInterval(fetchBalance, 30000);
+    // Refresh balance every 60 seconds (slower to be nicer to API)
+    const interval = setInterval(fetchBalance, 60000);
     return () => clearInterval(interval);
-  }, [wallet.connected, wallet.address, network]);
+  }, [wallet.connected, wallet.address, wallet.addresses, network]);
 
   const clarityFiles = React.useMemo(() => {
     const results: FileNode[] = [];
@@ -369,6 +407,53 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
   };
 
+  const handleRequestTokens = async () => {
+    if (!wallet.address || !wallet.connected) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+
+    setRequestingTokens(true);
+    if (onAddTerminalLine) {
+      onAddTerminalLine({
+        type: 'command',
+        content: `Requesting testnet STX tokens for ${wallet.address}...`
+      });
+    }
+
+    try {
+      const result = await StacksWalletService.requestTestnetTokens(wallet.address);
+      console.log('Faucet result:', result);
+
+      if (result.success || result.txid) {
+        if (onAddTerminalLine) {
+          onAddTerminalLine({
+            type: 'success',
+            content: `Tokens requested successfully! It may take a few minutes to reflect in your balance.`
+          });
+        }
+        // Refresh balance after a short delay
+        setTimeout(async () => {
+          const bal = await StacksWalletService.getBalance(wallet.address!);
+          setBalance(bal);
+        }, 5000);
+      } else {
+        throw new Error(result.reason || result.message || 'Unknown error from faucet.');
+      }
+    } catch (err: any) {
+      console.error('Faucet error:', err);
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'error',
+          content: `Faucet request failed: ${err.message}`
+        });
+      }
+      alert(`Faucet Error: ${err.message}`);
+    } finally {
+      setRequestingTokens(false);
+    }
+  };
+
   const clearHistory = () => {
     if (confirm('Clear all deployment history?')) {
       setDeployedContracts([]);
@@ -501,17 +586,37 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         {/* Wallet Section */}
         <section>
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">BALANCE:</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">BALANCE:</h3>
+              {network === 'testnet' && wallet.connected && (
+                <button
+                  onClick={handleRequestTokens}
+                  disabled={requestingTokens}
+                  className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border transition-all ${requestingTokens
+                    ? 'bg-caspier-dark border-caspier-border text-caspier-muted cursor-not-allowed'
+                    : 'bg-labstx-orange/10 border-labstx-orange/30 text-labstx-orange hover:bg-labstx-orange hover:text-white hover:border-labstx-orange'
+                    }`}
+                >
+                  {requestingTokens ? 'Requesting...' : 'Get Tokens'}
+                </button>
+              )}
+            </div>
             {wallet.connected && (
               <span className="text-[10px] font-mono font-bold text-labstx-orange bg-labstx-orange/10 px-1.5 py-0.5 rounded">
                 {balance} STX
               </span>
             )}
           </div>
+          {!wallet.addresses && wallet.connected && (
+            <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] text-blue-400">
+              💡 Please <strong>Reconnect Wallet</strong> to enable seamless Mainnet/Testnet switching.
+            </div>
+          )}
           <WalletConnectionComponent
             wallet={wallet}
             onConnect={onWalletConnect}
             onDisconnect={onWalletDisconnect}
+            network={network}
           />
         </section>
 
