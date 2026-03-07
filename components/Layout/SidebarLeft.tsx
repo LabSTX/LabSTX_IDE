@@ -4,7 +4,8 @@ import { FileNode, ActivityView, ProjectSettings, GitState, GitCommit, WalletCon
 import {
     FolderIcon, FileIcon, ChevronRightIcon, ChevronDownIcon,
     FilePlusIcon, FolderPlusIcon, EditIcon, TrashIcon, CheckIcon, XIcon,
-    UndoIcon, RedoIcon, SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon, GitBranchIcon, GitCommitIcon
+    UndoIcon, RedoIcon, SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon, GitBranchIcon, GitCommitIcon,
+    ReplaceIcon, CaseSensitiveIcon, WholeWordIcon, RegexIcon, CollapseIcon
 } from '../UI/Icons';
 import { Button } from '../UI/Button';
 import DeployPanel from '../Deploy/DeployPanel';
@@ -47,6 +48,9 @@ interface SidebarLeftProps {
     setIsProjectModalOpen: (open: boolean) => void;
     onAddTerminalLine?: (line: Omit<TerminalLine, 'id'>) => void;
     theme: 'dark' | 'light';
+    sessionId?: string;
+    onUpdateFiles?: (newFiles: FileNode[]) => void;
+    onCollapseAll?: () => void;
 }
 
 interface FileTreeItemProps {
@@ -72,9 +76,16 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
     creatingInNodeId, creatingType, onSubmitCreate, onCancelCreate,
     editingId, onSubmitRename, onCancelRename
 }) => {
-    const [isOpen, setIsOpen] = useState(true);
+    const [isOpen, setIsOpen] = useState(node.isOpen ?? true);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // Sync state with node.isOpen when it's controlled from parent
+    useEffect(() => {
+        if (node.isOpen !== undefined) {
+            setIsOpen(node.isOpen);
+        }
+    }, [node.isOpen]);
 
     // Focus input when appearing
     useEffect(() => {
@@ -265,8 +276,90 @@ const InputGroup: React.FC<InputGroupProps> = ({ label, children }) => (
 interface SearchResult {
     file: FileNode;
     fileNameMatch: boolean;
-    contentMatches: { line: number; text: string }[];
+    contentMatches: { line: number; text: string; indices: [number, number] }[];
 }
+
+const SearchResultItem: React.FC<{
+    result: SearchResult;
+    onFileSelect: (id: string) => void;
+    searchQuery: string;
+    replaceQuery: string;
+    onReplaceInFile: (fileId: string, newContent: string) => void;
+    createSearchRegex: (q: string) => RegExp | null;
+}> = ({ result, onFileSelect, searchQuery, replaceQuery, onReplaceInFile, createSearchRegex }) => {
+    const [isExpanded, setIsExpanded] = useState(true);
+
+    const handleReplaceThisFile = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const regex = createSearchRegex(searchQuery);
+        if (!regex || !result.file.content) return;
+        const newContent = result.file.content.replace(regex, replaceQuery);
+        onReplaceInFile(result.file.id, newContent);
+    };
+
+    const renderMatchText = (text: string, indices: [number, number]) => {
+        const [start, end] = indices;
+        const prefix = text.substring(Math.max(0, start - 20), start);
+        const match = text.substring(start, end);
+        const suffix = text.substring(end, Math.min(text.length, end + 40));
+
+        return (
+            <>
+                <span className="opacity-50">...</span>
+                <span>{prefix}</span>
+                <span className="bg-labstx-orange/40 text-caspier-text rounded-sm px-0.5 border border-labstx-orange/20">{match}</span>
+                <span>{suffix}</span>
+                <span className="opacity-50">...</span>
+            </>
+        );
+    };
+
+    return (
+        <div className="mb-0.5 overflow-hidden">
+            <div
+                className="flex items-center gap-1.5 cursor-pointer py-1 px-1.5 hover:bg-caspier-hover rounded group/file select-none"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <ChevronRightIcon className={`w-3 h-3 text-caspier-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                <SmartFileIcon name={result.file.name} className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="text-[11px] text-caspier-text font-bold truncate flex-1">{result.file.name}</span>
+
+                <div className="flex items-center gap-1 opacity-0 group-hover/file:opacity-100 transition-opacity">
+                    {replaceQuery && (
+                        <button
+                            className="p-1 hover:text-emerald-500 hover:bg-emerald-500/10 rounded transition-colors"
+                            onClick={handleReplaceThisFile}
+                            title="Replace in this file"
+                        >
+                            <ReplaceIcon className="w-3 h-3" />
+                        </button>
+                    )}
+                    <span className="text-[9px] font-black bg-caspier-border/40 text-caspier-muted px-1 rounded h-4 flex items-center">
+                        {result.contentMatches.length}
+                    </span>
+                </div>
+            </div>
+
+            {isExpanded && result.contentMatches.length > 0 && (
+                <div className="ml-4 mt-0.5 border-l border-caspier-border/30 space-y-0">
+                    {result.contentMatches.map((match, idx) => (
+                        <div
+                            key={idx}
+                            className="text-[10px] font-mono text-caspier-muted cursor-pointer hover:bg-caspier-hover/50 px-2 py-1 truncate flex items-center group/match"
+                            onClick={() => onFileSelect(result.file.id)}
+                            title={`Line ${match.line}: ${match.text.trim()}`}
+                        >
+                            <span className="text-caspier-muted/40 mr-2 w-7 text-right select-none flex-shrink-0">{match.line}</span>
+                            <span className="truncate text-caspier-text/90">
+                                {renderMatchText(match.text, match.indices)}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const SidebarLeft: React.FC<SidebarLeftProps> = ({
     files, activeFileId, onFileSelect, activeView,
@@ -276,7 +369,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     gitState, onStageFile, onUnstageFile, onDiscardFile, onCommit, onPush, onSwitchBranch, onCreateBranch,
     wallet, onWalletConnect, onWalletDisconnect, compilationResult, onDeploySuccess,
     onLoadTemplate, onCreateBlank, onImport, theme, onAddTerminalLine,
-    isProjectModalOpen, setIsProjectModalOpen
+    isProjectModalOpen, setIsProjectModalOpen, sessionId, onUpdateFiles, onCollapseAll
 }) => {
     // Explorer State
     const [creatingInNodeId, setCreatingInNodeId] = useState<string | null>(null);
@@ -285,6 +378,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
     // Search State
     const [searchQuery, setSearchQuery] = useState('');
+    const [replaceQuery, setReplaceQuery] = useState('');
+    const [isReplaceVisible, setIsReplaceVisible] = useState(false);
+    const [searchOptions, setSearchOptions] = useState({
+        matchCase: false,
+        matchWholeWord: false,
+        useRegex: false
+    });
 
     // Git State
     const [commitMessage, setCommitMessage] = useState('');
@@ -326,23 +426,49 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     };
 
     // --- Search Logic ---
+    const createSearchRegex = (query: string, global: boolean = true) => {
+        try {
+            let pattern = query;
+            if (!searchOptions.useRegex) {
+                // Escape regex special chars
+                pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            if (searchOptions.matchWholeWord) {
+                pattern = `\\b${pattern}\\b`;
+            }
+
+            const flags = (global ? 'g' : '') + (searchOptions.matchCase ? '' : 'i');
+            return new RegExp(pattern, flags);
+        } catch (e) {
+            return null;
+        }
+    };
+
     const searchResults = useMemo(() => {
         if (!searchQuery.trim()) return [];
 
         const results: SearchResult[] = [];
-        const lowerQuery = searchQuery.toLowerCase();
+        const regex = createSearchRegex(searchQuery);
+        if (!regex) return [];
 
         const traverse = (nodes: FileNode[]) => {
             for (const node of nodes) {
                 if (node.type === 'file') {
-                    let fileNameMatch = node.name.toLowerCase().includes(lowerQuery);
-                    let contentMatches: { line: number; text: string }[] = [];
+                    let fileNameMatch = regex.test(node.name);
+                    let contentMatches: { line: number; text: string; indices: [number, number] }[] = [];
 
                     if (node.content) {
                         const lines = node.content.split('\n');
                         lines.forEach((line, index) => {
-                            if (line.toLowerCase().includes(lowerQuery)) {
-                                contentMatches.push({ line: index + 1, text: line.trim() });
+                            regex.lastIndex = 0; // Reset for each line
+                            const match = regex.exec(line);
+                            if (match) {
+                                contentMatches.push({
+                                    line: index + 1,
+                                    text: line,
+                                    indices: [match.index, match.index + match[0].length]
+                                });
                             }
                         });
                     }
@@ -360,7 +486,46 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
         traverse(files);
         return results;
-    }, [searchQuery, files]);
+    }, [searchQuery, files, searchOptions]);
+
+    const handleReplaceAll = () => {
+        if (!searchQuery || !onUpdateFiles) return;
+        const regex = createSearchRegex(searchQuery);
+        if (!regex) return;
+
+        if (!window.confirm(`Are you sure you want to replace all occurrences of "${searchQuery}" with "${replaceQuery}" across all files?`)) {
+            return;
+        }
+
+        const replaceRecursive = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map(node => {
+                if (node.type === 'file' && node.content) {
+                    const newContent = node.content.replace(regex, replaceQuery);
+                    return { ...node, content: newContent };
+                }
+                if (node.children) {
+                    return { ...node, children: replaceRecursive(node.children) };
+                }
+                return node;
+            });
+        };
+
+        const newFiles = replaceRecursive(files);
+        onUpdateFiles(newFiles);
+        onAddTerminalLine?.({ type: 'info', content: `Replace All: Processed ${searchResults.length} files.` });
+    };
+
+    const handleReplaceInFile = (fileId: string, newContent: string) => {
+        if (!onUpdateFiles) return;
+        const updateRecursive = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map(node => {
+                if (node.id === fileId) return { ...node, content: newContent };
+                if (node.children) return { ...node, children: updateRecursive(node.children) };
+                return node;
+            });
+        };
+        onUpdateFiles(updateRecursive(files));
+    };
 
     // --- Helper to find file name by ID ---
     const findFileName = (nodes: FileNode[], id: string): string => {
@@ -443,6 +608,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     >
                         <FolderPlusIcon className="w-4 h-4" />
                     </button>
+                    <button
+                        className="text-caspier-muted hover:text-caspier-text p-1"
+                        title="Collapse All"
+                        onClick={onCollapseAll}
+                    >
+                        <CollapseIcon className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
@@ -482,53 +654,102 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     );
 
     const renderSearch = () => (
-        <div className="flex flex-col h-full">
-            <div className="p-4 border-b border-caspier-border bg-caspier-black">
-                <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase mb-3">Search</h2>
-                <div className="relative">
-                    <input
-                        type="text"
-                        className="w-full bg-caspier-dark border border-caspier-border text-caspier-text text-sm px-3 py-1.5 focus:border-labstx-orange outline-none pl-8 rounded"
-                        placeholder="Search"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        autoFocus
-                    />
-                    <SearchIcon className="w-4 h-4 absolute left-2 top-2 text-caspier-muted" />
+        <div className="flex flex-col h-full bg-caspier-black">
+            <div className="p-3 border-b border-caspier-border">
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Search & Replace</h2>
+                </div>
+
+                <div className="space-y-2">
+                    {/* Search Field */}
+                    <div className="flex items-center gap-1 group">
+                        <button
+                            onClick={() => setIsReplaceVisible(!isReplaceVisible)}
+                            className={`p-1 transition-transform ${isReplaceVisible ? 'rotate-90' : ''}`}
+                        >
+                            <ChevronRightIcon className="w-3 h-3 text-caspier-muted" />
+                        </button>
+                        <div className="relative flex-1">
+                            <input
+                                type="text"
+                                className="w-full bg-caspier-dark border border-caspier-border text-white text-[11px] font-medium px-2 py-1.5 focus:border-labstx-orange outline-none rounded pr-20"
+                                placeholder="Search"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                autoFocus
+                            />
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                                <button
+                                    className={`p-1 rounded-sm transition-colors ${searchOptions.matchCase ? 'bg-labstx-orange/20 text-labstx-orange' : 'text-caspier-muted hover:bg-caspier-hover'}`}
+                                    onClick={() => setSearchOptions(prev => ({ ...prev, matchCase: !prev.matchCase }))}
+                                    title="Match Case"
+                                >
+                                    <CaseSensitiveIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    className={`p-1 rounded-sm transition-colors ${searchOptions.matchWholeWord ? 'bg-labstx-orange/20 text-labstx-orange' : 'text-caspier-muted hover:bg-caspier-hover'}`}
+                                    onClick={() => setSearchOptions(prev => ({ ...prev, matchWholeWord: !prev.matchWholeWord }))}
+                                    title="Match Whole Word"
+                                >
+                                    <WholeWordIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    className={`p-1 rounded-sm transition-colors ${searchOptions.useRegex ? 'bg-labstx-orange/20 text-labstx-orange' : 'text-caspier-muted hover:bg-caspier-hover'}`}
+                                    onClick={() => setSearchOptions(prev => ({ ...prev, useRegex: !prev.useRegex }))}
+                                    title="Use Regular Expression"
+                                >
+                                    <RegexIcon className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Replace Field */}
+                    {isReplaceVisible && (
+                        <div className="flex items-center gap-1 animate-in slide-in-from-top-1 duration-200 pl-4">
+                            <div className="relative flex-1">
+                                <input
+                                    type="text"
+                                    className="w-full bg-caspier-dark border border-caspier-border text-white text-[11px] font-medium px-2 py-1.5 focus:border-emerald-500 outline-none rounded pr-8"
+                                    placeholder="Replace"
+                                    value={replaceQuery}
+                                    onChange={(e) => setReplaceQuery(e.target.value)}
+                                />
+                                <button
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-caspier-muted hover:text-emerald-500"
+                                    onClick={handleReplaceAll}
+                                    title="Replace All"
+                                >
+                                    <ReplaceIcon className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">
+
+            <div className="flex-1 overflow-y-auto px-2 py-3 bg-caspier-dark/20">
+                {!searchQuery && (
+                    <div className="text-caspier-muted text-[11px] text-center mt-8 opacity-40">
+                        Type to search across files...
+                    </div>
+                )}
                 {searchQuery && searchResults.length === 0 && (
-                    <div className="text-caspier-muted text-xs text-center mt-4">No results found.</div>
+                    <div className="text-caspier-muted text-[11px] text-center mt-8">
+                        No results found.
+                    </div>
                 )}
 
                 {searchResults.map((result) => (
-                    <div key={result.file.id} className="mb-2">
-                        <div
-                            className="flex items-center gap-2 cursor-pointer py-1 px-2 hover:bg-caspier-hover rounded group"
-                            onClick={() => onFileSelect(result.file.id)}
-                        >
-                            <SmartFileIcon name={result.file.name} className="w-4 h-4 text-caspier-muted group-hover:text-labstx-orange" />
-                            <span className="text-sm text-caspier-text font-medium truncate flex-1">{result.file.name}</span>
-                            <span className="text-xs bg-caspier-panel text-caspier-muted px-1.5 rounded-full border border-caspier-border">
-                                {result.contentMatches.length > 0 ? result.contentMatches.length : (result.fileNameMatch ? 'Name' : '0')}
-                            </span>
-                        </div>
-                        {result.contentMatches.length > 0 && (
-                            <div className="ml-4 pl-2 border-l border-caspier-border mt-1 space-y-1">
-                                {result.contentMatches.map((match, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="text-xs font-mono text-caspier-muted cursor-pointer hover:text-caspier-text truncate py-0.5"
-                                        onClick={() => onFileSelect(result.file.id)}
-                                    >
-                                        <span className="text-caspier-text mr-2 select-none">{match.line}:</span>
-                                        <span>{match.text.substring(0, 100)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    <SearchResultItem
+                        key={result.file.id}
+                        result={result}
+                        onFileSelect={onFileSelect}
+                        searchQuery={searchQuery}
+                        replaceQuery={replaceQuery}
+                        onReplaceInFile={handleReplaceInFile}
+                        createSearchRegex={createSearchRegex}
+                    />
                 ))}
             </div>
         </div>
@@ -884,6 +1105,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         contractCode={activeFile?.content || ''}
                         contractName={activeFile?.name || ''}
                         theme={theme}
+                        sessionId={sessionId}
                     />
                 );
             }

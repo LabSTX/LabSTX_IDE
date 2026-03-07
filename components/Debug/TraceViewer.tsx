@@ -5,9 +5,10 @@ interface TraceViewerProps {
     contractCode?: string;
     contractName?: string;
     theme?: 'dark' | 'light';
+    sessionId?: string;
 }
 
-const TraceViewer: React.FC<TraceViewerProps> = ({ contractCode, contractName, theme }) => {
+const TraceViewer: React.FC<TraceViewerProps> = ({ contractCode, contractName, theme, sessionId }) => {
     const [trace, setTrace] = useState<TraceStep[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ const TraceViewer: React.FC<TraceViewerProps> = ({ contractCode, contractName, t
             if (!contractCode || !contractName) return;
             setLoading(true);
             try {
-                const data = await ClarityDebugger.getDebugData(contractCode, contractName);
+                const data = await ClarityDebugger.getDebugData(sessionId || '', contractCode, contractName);
                 setTrace(data.trace);
             } catch (error) {
                 console.error("Failed to fetch trace:", error);

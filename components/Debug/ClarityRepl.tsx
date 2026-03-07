@@ -5,9 +5,10 @@ interface ClarityReplProps {
     contractCode?: string;
     contractName?: string;
     theme?: 'dark' | 'light';
+    sessionId?: string;
 }
 
-const ClarityRepl: React.FC<ClarityReplProps> = ({ contractCode, contractName, theme }) => {
+const ClarityRepl: React.FC<ClarityReplProps> = ({ contractCode, contractName, theme, sessionId }) => {
     const [lines, setLines] = useState<DebugLine[]>(() => [
         { id: '1', type: 'output', content: 'CLARITY REPL v2.0' },
         { id: '2', type: 'output', content: 'Connection: SIMNET (Local Backend)' },
@@ -54,7 +55,9 @@ const ClarityRepl: React.FC<ClarityReplProps> = ({ contractCode, contractName, t
         setIsExecuting(true);
 
         try {
-            const result = await ClarityDebugger.execute(currentInput,
+            const result = await ClarityDebugger.execute(
+                sessionId || '',
+                currentInput,
                 contractCode && contractName ? { code: contractCode, name: contractName } : undefined
             );
 

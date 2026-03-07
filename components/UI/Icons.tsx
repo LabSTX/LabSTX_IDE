@@ -212,6 +212,15 @@ export const GridIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+export const CollapseIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <polyline points="4 14 10 14 10 20" />
+    <polyline points="20 10 14 10 14 4" />
+    <line x1="14" y1="10" x2="21" y2="3" />
+    <line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+
 export const SunIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="12" cy="12" r="5" />
@@ -323,6 +332,45 @@ export const EyeIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const ReplaceIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M14 4h7v7" />
+    <path d="M21 4l-7 7" />
+    <path d="M3 20h7v-7" />
+    <path d="M10 20l-7-7" />
+  </svg>
+);
+
+export const CaseSensitiveIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M7 21v-6" />
+    <path d="M20 21v-6" />
+    <path d="M15 21v-6" />
+    <path d="M11 21v-6" />
+    <path d="M7 10V5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v5" />
+    <path d="M7 7h5" />
+    <path d="M16 10h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1" />
+  </svg>
+);
+
+export const WholeWordIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M3 5h4v14H3z" />
+    <path d="M17 5h4v14h-4z" />
+    <path d="M7 12h10" />
+  </svg>
+);
+
+export const RegexIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M5 12h14" />
+    <path d="M12 5v14" />
+    <circle cx="12" cy="12" r="9" opacity="0.2" />
+    <path d="M8 8l8 8" />
+    <path d="M16 8l-8 8" />
   </svg>
 );
 

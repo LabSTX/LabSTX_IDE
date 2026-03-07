@@ -19,6 +19,7 @@ import MarkdownPreviewTab from './components/UI/MarkdownPreviewTab';
 import EmptyState from './components/Layout/EmptyState';
 import { ClarityCompiler } from './services/stacks/compiler';
 import { StacksWalletService } from './services/stacks/wallet';
+import { filesToFileNodes } from './services/templates';
 import JSZip from 'jszip';
 import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
 
@@ -34,6 +35,17 @@ function App() {
 
     // Theme State
     const [theme, setTheme] = useState<'dark' | 'light'>('light');
+
+    // Session State
+    const [sessionId] = useState(() => {
+        const saved = sessionStorage.getItem('labstx_session_id');
+        if (saved) return saved;
+        const newId = `sess_${Math.random().toString(36).substring(2, 9)}`;
+        sessionStorage.setItem('labstx_session_id', newId);
+        return newId;
+    });
+
+    const [firstRunWorkspaces, setFirstRunWorkspaces] = useState<Record<string, boolean>>({});
 
     // Workspace State with localStorage persistence
     const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>(() => {
@@ -124,6 +136,7 @@ function App() {
 
     // Editing State
     const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([]);
+    const [deletedFilePaths, setDeletedFilePaths] = useState<string[]>([]);
     const [editorAction, setEditorAction] = useState<{ type: 'undo' | 'redo' | 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number }>({ type: null, timestamp: 0 });
 
     // Search-in-code state (synced to Monaco's find widget)
@@ -249,19 +262,30 @@ function App() {
         }
     };
 
-    // Prevent data loss on reload
+    // Prevent data loss and clear session on close
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-            if (gitState.modifiedFiles.length > 0 || gitState.stagedFiles.length > 0) {
-                e.preventDefault();
-                e.returnValue = 'You have unsaved changes in the code editor. Are you sure you want to leave?';
-                return e.returnValue;
-            }
+            const message = "Are you sure you want to leave? Your temporary session will be cleared and the workspace folder on the server will be deleted.";
+            e.preventDefault();
+            e.returnValue = message; // Traditional browser-standard way to show "Are you sure?"
+            return message;
+        };
+
+        const handleUnload = () => {
+            // Use sendBeacon to ensure the request is sent even during tab closure
+            const payload = JSON.stringify({ sessionId });
+            const blob = new Blob([payload], { type: 'application/json' });
+            navigator.sendBeacon('/ide-api/project/session/clear', blob);
         };
 
         window.addEventListener('beforeunload', handleBeforeUnload);
-        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [gitState.modifiedFiles, gitState.stagedFiles]);
+        window.addEventListener('unload', handleUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('unload', handleUnload);
+        };
+    }, [sessionId]);
 
     // Resizing Logic
     const startResizing = useCallback((direction: 'left' | 'right') => (mouseDownEvent: React.MouseEvent) => {
@@ -346,6 +370,19 @@ function App() {
             if (node.type === 'file' && node.name === name) return node;
             if (node.children) {
                 const found = findFileByName(node.children, name);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
+    // Recursively get the path for a given file ID
+    const getFilePath = (nodes: FileNode[], targetId: string, currentPath = ''): string | null => {
+        for (const node of nodes) {
+            const newPath = currentPath ? `${currentPath}/${node.name}` : node.name;
+            if (node.id === targetId) return newPath;
+            if (node.children) {
+                const found = getFilePath(node.children, targetId, newPath);
                 if (found) return found;
             }
         }
@@ -745,22 +782,15 @@ function App() {
     const handleEditorRedo = () => setEditorAction({ type: 'redo', timestamp: Date.now() });
 
     const handleCompile = async () => {
-        if (!activeFileId) return;
-        const file = findFile(files, activeFileId);
-        if (!file || file.type !== 'file') return;
-
-        const fileName = file.name;
-        const sourceCode = file.content || activeContent;
-
         setTerminalLines(prev => [
             ...prev,
-            { id: Date.now().toString(), type: 'command', content: `Running clarinet check: ${fileName}...` },
+            { id: Date.now().toString(), type: 'command', content: `Syncing workspace and running clarinet check...` },
         ]);
 
         setOutputLines([
-            `> Executing: clarinet check ${fileName}`,
+            `> Executing: clarinet check (Workspace Sync)`,
             `> Using Clarinet CLI version 3.4.0`,
-            `> Analyzing contract for syntax and logic errors...`
+            `> Analyzing project for syntax and logic errors...`
         ]);
 
         setProblems([]);
@@ -769,13 +799,88 @@ function App() {
         try {
             let result: CompilationResult;
 
-            if (file.language === 'clarity' || fileName.endsWith('.clar')) {
-                result = await ClarityCompiler.check(sourceCode, fileName);
+            const runFullSync = async () => {
+                const zip = new JSZip();
+                const processNode = (node: FileNode, folder: any) => {
+                    if (node.type === 'folder') {
+                        const newFolder = folder ? folder.folder(node.name) : zip.folder(node.name);
+                        if (node.children) node.children.forEach(child => processNode(child, newFolder));
+                    } else {
+                        const content = node.content || '';
+                        if (folder) folder.file(node.name, content);
+                        else zip.file(node.name, content);
+                    }
+                };
+                files.forEach(node => processNode(node, zip));
+                const zipBlob = await zip.generateAsync({ type: "blob" });
+                const res = await ClarityCompiler.initWorkspace(sessionId, zipBlob);
+
+                // Clear tracked deletions after full sync
+                if (res.success) {
+                    setDeletedFilePaths([]);
+                }
+                return res;
+            };
+
+            const runDeltaSync = async () => {
+                const changedFiles: Record<string, string> = {};
+
+                // Mirror backend workspace hoisting: if there's exactly one root folder, strip its name
+                const processPath = (rawPath: string | null) => {
+                    if (!rawPath) return null;
+                    if (files.length === 1 && files[0].type === 'folder' && rawPath.startsWith(files[0].name + '/')) {
+                        return rawPath.substring(files[0].name.length + 1);
+                    }
+                    return rawPath;
+                };
+
+                dirtyFileIds.forEach(id => {
+                    const file = findFile(files, id);
+                    if (file && file.type === 'file') {
+                        const path = processPath(getFilePath(files, id));
+                        if (path) changedFiles[path] = file.content || '';
+                    }
+                });
+                if (activeFileId && !dirtyFileIds.includes(activeFileId)) {
+                    const file = findFile(files, activeFileId);
+                    if (file && file.type === 'file') {
+                        const path = processPath(getFilePath(files, activeFileId));
+                        if (path) changedFiles[path] = file.content || activeContent;
+                    }
+                }
+
+                const processedDeletedPaths = deletedFilePaths.map(p => processPath(p)).filter(Boolean) as string[];
+                const res = await ClarityCompiler.updateWorkspace(sessionId, changedFiles, processedDeletedPaths);
+
+                // Clear deletions if successful
+                if (res.success) {
+                    setDeletedFilePaths([]);
+                }
+                return res;
+            };
+
+            const isFirst = !firstRunWorkspaces[activeWorkspace];
+
+            if (isFirst) {
+                result = await runFullSync();
+                setFirstRunWorkspaces(prev => ({ ...prev, [activeWorkspace]: true }));
             } else {
-                throw new Error(`Unsupported file type for Stacks: ${fileName}`);
+                try {
+                    result = await runDeltaSync();
+                } catch (e: any) {
+                    if (e.message === 'WORKSPACE_EXPIRED') {
+                        setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: `Workspace expired on server. Running Full Sync...` }]);
+                        result = await runFullSync();
+                    } else {
+                        throw e;
+                    }
+                }
             }
 
             setCompilationResult(result);
+
+            // clear dirty
+            setDirtyFileIds([]);
 
             if (result.success) {
                 setTerminalLines(prev => [
@@ -783,7 +888,6 @@ function App() {
                     { id: Date.now().toString(), type: 'success', content: 'Clarinet Check successful!' },
                 ]);
 
-                // Print the full raw log from the CLI
                 const logLines = result.output ? result.output.split('\n') : ['Analysis completed.'];
                 setOutputLines(prev => [
                     ...prev,
@@ -793,7 +897,7 @@ function App() {
                     `> ✨ Contract is valid according to Clarinet.`
                 ]);
 
-                if (result.metadata?.entryPoints) {
+                if (result.metadata?.entryPoints && result.metadata.entryPoints.length > 0) {
                     setOutputLines(prev => [...prev, `> 🔧 Functions found: ${result.metadata.entryPoints.map(ep => ep.name).join(', ')}`]);
                 }
             } else {
@@ -814,7 +918,7 @@ function App() {
                 if (result.errors) {
                     const fileProblems: Problem[] = result.errors.map((error, idx) => ({
                         id: `${Date.now()}-${idx}`,
-                        file: fileName,
+                        file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
                         description: error,
                         line: 1,
                         column: 1,
@@ -833,12 +937,57 @@ function App() {
             setOutputLines(prev => [...prev, `Error: ${error.message}`]);
             setProblems([{
                 id: Date.now().toString(),
-                file: fileName,
+                file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
                 description: error.message,
                 line: 1,
                 column: 1,
                 severity: 'error'
             }]);
+        }
+    };
+
+    const handleSyncWorkspace = async () => {
+        setTerminalLines(prev => [
+            ...prev,
+            { id: Date.now().toString(), type: 'info', content: 'Syncing workspace from server...' }
+        ]);
+
+        try {
+            const serverFiles = await ClarityCompiler.getWorkspaceFiles(sessionId);
+            if (Object.keys(serverFiles).length === 0) {
+                setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: 'No files found in server workspace.' }]);
+                return;
+            }
+
+            const newFileNodes = filesToFileNodes(serverFiles, activeWorkspace);
+
+            // If the backend has a single root folder, it might need special handling
+            // but filesToFileNodes should handle the structure correctly
+
+            addToHistory(newFileNodes);
+            setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'success', content: 'Workspace synced successfully!' }]);
+
+            // If active file was deleted on server, clear it
+            if (activeFileId) {
+                const stillExists = Object.keys(serverFiles).some(path => {
+                    const parts = path.split('/');
+                    const name = parts[parts.length - 1];
+                    const node = findFile(newFileNodes, activeFileId);
+                    return node !== null;
+                });
+                // Simple existence check might be hard with new IDs, 
+                // but let's at least try to keep the active file if possible
+            }
+
+        } catch (error: any) {
+            console.error('[Sync] Error:', error);
+            let errorMessage = `Sync failed: ${error.message}`;
+
+            if (error.message.includes('404')) {
+                errorMessage = 'Sync failed: Server workspace not found. Please click "Check/Compile" button first to initialize the server environment.';
+            }
+
+            setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'error', content: errorMessage }]);
         }
     };
 
@@ -893,22 +1042,34 @@ function App() {
                 }
             }
 
-            // If we have a contract, ensure it's "deployed" to the backend session first
-            if (contractContext) {
-                await fetch('/ide-api/clarity/deploy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(contractContext)
-                });
-            }
+            // The contract now implicitly exists in the auto-synced workspace
+            // so we can go straight to the terminal command
 
             const response = await fetch('/ide-api/clarity/terminal', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command })
+                body: JSON.stringify({ command, sessionId })
             });
 
-            const result = await response.json();
+            let result;
+            try {
+                const text = await response.text();
+                // Handle empty responses or Gateway Timeouts
+                if (!text) {
+                    setTerminalLines(prev => [
+                        ...prev,
+                        { id: Date.now().toString(), type: 'error', content: `Proxy or server returned an empty response (Status: ${response.status}). The backend might have crashed or timed out.` },
+                    ]);
+                    return;
+                }
+                result = JSON.parse(text);
+            } catch (err) {
+                setTerminalLines(prev => [
+                    ...prev,
+                    { id: Date.now().toString(), type: 'error', content: `Failed to parse response from server. Status: ${response.status}.` },
+                ]);
+                return;
+            }
 
             if (result.output) {
                 const outputLines = result.output.split('\n');
@@ -922,17 +1083,27 @@ function App() {
                 });
             }
 
-            if (!result.success && !result.output) {
+            if (!result.success && !result.output && !result.error) {
                 setTerminalLines(prev => [
                     ...prev,
                     { id: Date.now().toString(), type: 'error', content: 'Command failed.' },
                 ]);
+            } else if (result.error) {
+                setTerminalLines(prev => [
+                    ...prev,
+                    { id: Date.now().toString(), type: 'error', content: result.error },
+                ]);
             }
+
+            // Automatically sync workspace after any Clarinet command
+            await handleSyncWorkspace();
         } catch (error: any) {
             setTerminalLines(prev => [
                 ...prev,
                 { id: Date.now().toString(), type: 'error', content: `Execution error: ${error.message}` },
             ]);
+            // Still try to sync in case partial changes were made
+            await handleSyncWorkspace();
         }
     };
 
@@ -1119,27 +1290,50 @@ function App() {
             type: type,
             language: type === 'file' ? language : undefined,
             content: type === 'file' ? (initialContent ?? '') : undefined,
-            children: type === 'folder' ? [] : undefined
+            children: type === 'folder' ? [] : undefined,
+            isOpen: type === 'folder' ? true : undefined
         };
 
-        const addNodeRecursive = (nodes: FileNode[]): FileNode[] => {
-            return nodes.map(node => {
-                if (node.id === parentId && node.type === 'folder') {
-                    return { ...node, children: [...(node.children || []), newNode], isOpen: true };
-                }
-                if (node.children) {
-                    return { ...node, children: addNodeRecursive(node.children) };
-                }
-                return node;
-            });
-        };
+        let newFiles: FileNode[];
+        if (parentId === 'root') {
+            newFiles = [...files, newNode];
+        } else {
+            const addNodeRecursive = (nodes: FileNode[]): FileNode[] => {
+                return nodes.map(node => {
+                    if (node.id === parentId && node.type === 'folder') {
+                        return { ...node, children: [...(node.children || []), newNode], isOpen: true };
+                    }
+                    if (node.children) {
+                        return { ...node, children: addNodeRecursive(node.children) };
+                    }
+                    return node;
+                });
+            };
+            newFiles = addNodeRecursive(files);
+        }
 
-        const newFiles = addNodeRecursive(files);
         addToHistory(newFiles);
         if (type === 'file') {
             handleFileOpen(newId);
             setGitState(prev => ({ ...prev, modifiedFiles: [...prev.modifiedFiles, newId] }));
         }
+    };
+
+    const handleCollapseAll = () => {
+        const collapseRecursive = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map(node => {
+                if (node.type === 'folder') {
+                    return {
+                        ...node,
+                        isOpen: false,
+                        children: node.children ? collapseRecursive(node.children) : []
+                    };
+                }
+                return node;
+            });
+        };
+        const newFiles = collapseRecursive(files);
+        addToHistory(newFiles);
     };
 
     const handleRenameNode = (id: string, newName: string) => {
@@ -1162,6 +1356,12 @@ function App() {
         // 1. Find the node to delete to identify all children
         const nodeToDelete = findFile(files, id);
         if (!nodeToDelete) return;
+
+        // Track path for delta sync deletion
+        const pathToDelete = getFilePath(files, id);
+        if (pathToDelete) {
+            setDeletedFilePaths(prev => prev.includes(pathToDelete) ? prev : [...prev, pathToDelete]);
+        }
 
         // 2. Get all IDs being deleted (including children)
         const idsToDelete = getSubtreeIds(nodeToDelete);
@@ -1337,6 +1537,7 @@ function App() {
                 onGitHubClone={handleGitHubClone}
                 onGitHubGistCreated={handleGitHubGistCreated}
                 workspaceFiles={collectWorkspaceFiles()}
+                onSync={handleSyncWorkspace}
             />
 
             {/* Main Workspace */}
@@ -1386,6 +1587,9 @@ function App() {
                             setIsProjectModalOpen={setIsProjectModalOpen}
                             onAddTerminalLine={addTerminalLine}
                             theme={theme}
+                            onUpdateFiles={addToHistory}
+                            sessionId={sessionId}
+                            onCollapseAll={handleCollapseAll}
                         />
                         {/* Left Resizer */}
                         <div
@@ -1466,7 +1670,7 @@ function App() {
                                 title="Run Clarinet Check (F5)"
                             >
                                 <PlayIcon className="w-3 h-3" />
-                                <span>Check</span>
+                                <span>Compile</span>
                             </Button>
                             <Button
                                 id="debug-button"
@@ -1633,7 +1837,7 @@ function App() {
                         🚀 Start Tour
                     </button>
                     <span>Ln 12, Col 4</span>
-                    <span>UTF-8</span>
+                    <span>LF</span>
                     <span>{activeLanguage.toUpperCase()}</span>
                     <span>LabSTX v1.2.0</span>
                 </div>

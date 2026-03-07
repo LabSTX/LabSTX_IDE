@@ -26,6 +26,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/ide-api/project': {
+          target: env.VITE_BACKEND_URL,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/ide-api/git': {
+          target: env.VITE_BACKEND_URL,
+          changeOrigin: true,
+          secure: false,
+        },
         // RPC proxy endpoint - handled by Vite middleware in dev, Vercel serverless in prod
         '/ide-api/rpc': {
           target: 'https://node.testnet.casper.network',

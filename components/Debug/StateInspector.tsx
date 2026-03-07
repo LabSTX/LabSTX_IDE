@@ -5,9 +5,10 @@ interface StateInspectorProps {
     contractCode?: string;
     contractName?: string;
     theme?: 'dark' | 'light';
+    sessionId?: string;
 }
 
-const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractName, theme }) => {
+const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractName, theme, sessionId }) => {
     const [stateVars, setStateVars] = useState<StateVar[]>([]);
     const [loading, setLoading] = useState(false);
     const [systemInfo, setSystemInfo] = useState<{ blockHeight: number; deployer: string }>({ blockHeight: 1, deployer: 'ST1PQ...GM' });
@@ -18,7 +19,7 @@ const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractN
                 if (!contractCode || !contractName) return;
                 setLoading(true);
                 try {
-                    const data = await ClarityDebugger.getDebugData(contractCode, contractName);
+                    const data = await ClarityDebugger.getDebugData(sessionId || '', contractCode, contractName);
                     setStateVars(data.state);
                     // System info is returned in the same object by the service but we don't have a direct type for it yet
                     // In a real app we'd expand the type

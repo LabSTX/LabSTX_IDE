@@ -2,6 +2,7 @@ import { FileNode } from '../types';
 import { helloWorldClarityExample } from '../examples/hello-world-clarity';
 import { counterClarityExample } from '../examples/counter-clarity';
 import { ftClarityExample } from '../examples/ft-clarity';
+import { completeClarityStarterExample } from '@/examples/complete-clarity';
 
 export interface Template {
   id: string;
@@ -33,32 +34,39 @@ export const TEMPLATES: Template[] = [
     description: 'A simple fungible token implementation (SIP-010-like)',
     language: 'clarity',
     files: ftClarityExample
+  },
+  {
+    id: 'clarity-smart-contract',
+    name: '🪙 Clarity Smart Contract',
+    description: 'A simple clarity smart contract',
+    language: 'clarity',
+    files: completeClarityStarterExample
   }
 ];
 
 /**
- * Convert template files to FileNode structure
+ * Convert a flat Record of path -> content to FileNode structure
  */
-export function templateToFileNodes(template: Template, parentId: string = 'root'): FileNode[] {
+export function filesToFileNodes(files: Record<string, string>, parentId: string = 'root'): FileNode[] {
   const nodes: FileNode[] = [];
   const fileMap: Record<string, FileNode> = {};
 
-  // Process each file in the template
-  for (const [path, content] of Object.entries(template.files)) {
+  // Process each file
+  for (const [path, content] of Object.entries(files)) {
     const parts = path.split('/');
     let currentPath = '';
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const pathKey = currentPath ? `${currentPath}/${part}` : part;
 
-      if (!fileMap[currentPath]) {
+      if (!fileMap[pathKey]) {
         const isFile = i === parts.length - 1;
         const extension = isFile ? part.split('.').pop()?.toLowerCase() : undefined;
         const language = isFile ? getLanguageFromExtension(extension || '') : undefined;
 
         const node: FileNode = {
-          id: `${parentId}-${currentPath}`,
+          id: `${parentId}-${pathKey}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Added random suffix to ensure uniqueness
           name: part,
           type: isFile ? 'file' : 'folder',
           content: isFile ? content : undefined,
@@ -66,7 +74,7 @@ export function templateToFileNodes(template: Template, parentId: string = 'root
           children: isFile ? undefined : []
         };
 
-        fileMap[currentPath] = node;
+        fileMap[pathKey] = node;
 
         // Add to parent
         if (i === 0) {
@@ -79,10 +87,18 @@ export function templateToFileNodes(template: Template, parentId: string = 'root
           }
         }
       }
+      currentPath = pathKey;
     }
   }
 
   return nodes;
+}
+
+/**
+ * Convert template files to FileNode structure
+ */
+export function templateToFileNodes(template: Template, parentId: string = 'root'): FileNode[] {
+  return filesToFileNodes(template.files, parentId);
 }
 
 function getLanguageFromExtension(ext: string): string {

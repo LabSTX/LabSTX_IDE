@@ -30,27 +30,17 @@ export class ClarityDebugger {
      * Executes a Clarity expression via the backend Simnet
      */
     static async execute(
+        sessionId: string,
         expression: string,
         contractContext?: { code: string; name: string }
     ): Promise<{ output: string; success: boolean; trace?: TraceStep[]; state?: StateVar[] }> {
         try {
-            // 1. If we have a contract context, ensure it's deployed to the backend first
-            if (contractContext && contractContext.name) {
-                await fetch('/ide-api/clarity/deploy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        code: contractContext.code,
-                        name: contractContext.name
-                    })
-                });
-            }
 
             // 2. Execute the snippet
             const response = await fetch('/ide-api/clarity/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ snippet: expression })
+                body: JSON.stringify({ snippet: expression, sessionId })
             });
 
             if (!response.ok) {
@@ -78,25 +68,24 @@ export class ClarityDebugger {
      * Gets state data from the backend
      */
     static async getDebugData(
+        sessionId: string,
         code: string,
         contractName: string
     ): Promise<{ state: StateVar[]; trace: TraceStep[] }> {
         try {
-            // Ensure deployed
-            await fetch('/ide-api/clarity/deploy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code, name: contractName })
-            });
 
             // Fetch state for this specific contract
             const response = await fetch('/ide-api/clarity/state', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contractName })
+                body: JSON.stringify({ contractName, sessionId })
             });
 
-            if (!response.ok) throw new Error('State fetch failed');
+            if (!response.ok) {
+                // Return gracefully if workspace expired, let frontend resync later
+                if (response.status === 404) return { state: [], trace: [] };
+                throw new Error('State fetch failed');
+            }
 
             const result = await response.json();
 

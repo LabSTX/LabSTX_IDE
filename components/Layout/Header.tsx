@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon, BugIcon } from '../UI/Icons';
+import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon, BugIcon, RefreshIcon } from '../UI/Icons';
 import { GitHubAuth } from '../GitHub/GitHubAuth';
 import { PublicCloneModal } from '../GitHub/PublicCloneModal';
 import { BugReportModal } from '../UI/BugReportModal';
@@ -24,6 +24,7 @@ interface HeaderProps {
   onGitHubClone?: (files: Record<string, string>, repoName: string) => void;
   onGitHubGistCreated?: (url: string) => void;
   workspaceFiles?: Record<string, string>;
+  onSync?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -44,7 +45,8 @@ const Header: React.FC<HeaderProps> = ({
   toggleTerminal,
   onGitHubClone,
   onGitHubGistCreated,
-  workspaceFiles
+  workspaceFiles,
+  onSync
 }) => {
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
 
@@ -136,7 +138,16 @@ const Header: React.FC<HeaderProps> = ({
           >
             <div className="absolute inset-0 bg-labstx-orange/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm" />
             <GithubIcon className="w-4 h-4 relative z-10" />
+          </button>
 
+          {/* Sync Workspace (Server to IDE) */}
+          <button
+            onClick={onSync}
+            className="group relative bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-emerald-500 hover:border-emerald-500 transition-all p-1.5 rounded-sm active:translate-y-[1px] ml-1 shadow-sm"
+            title="Sync from Server (Pull latest changes)"
+          >
+            <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm" />
+            <RefreshIcon className="w-4 h-4 relative z-10" />
           </button>
 
         </div>

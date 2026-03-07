@@ -13,6 +13,7 @@ interface SidebarRightProps {
     onClose: () => void;
     onUpdateFile: (fileId: string, content: string) => void;
     onCreateFile: (name: string, content: string) => void;
+    sessionId?: string;
 }
 
 interface CodeBlockProps {
@@ -101,7 +102,7 @@ const FileActionBlock: React.FC<FileActionBlockProps> = ({ type, filename, conte
     );
 };
 
-const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, settings, onClose, onUpdateFile, onCreateFile }) => {
+const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, settings, onClose, onUpdateFile, onCreateFile, sessionId }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([
         {
             id: 'welcome',
@@ -409,7 +410,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ currentCode, files, width, 
                         <h2 className="text-[11px] font-black text-caspier-text">LabSTX AI</h2>
                         <div className="flex items-center gap-1.5 mt-0.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
-                            <span className="text-[9px] text-caspier-muted font-bold uppercase tracking-tighter">
+                            <span className="text-[9px] text-caspier-muted  uppercase tracking-tighter">
                                 {settings.aiApiKey ? settings.aiModel.split('/')[1]?.toUpperCase() || settings.aiModel : 'ChainGPT v2'}
                             </span>
                         </div>

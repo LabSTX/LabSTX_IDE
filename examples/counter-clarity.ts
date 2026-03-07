@@ -1,5 +1,5 @@
 export const counterClarityExample = {
-    'contracts/counter.clar': `;; Counter Contract
+  'contracts/counter.clar': `;; Counter Contract
 ;; A stateful contract that manages a counter
 
 (define-data-var counter uint u0)
@@ -17,7 +17,7 @@ export const counterClarityExample = {
 (define-read-only (get-counter)
   (ok (var-get counter)))
 `,
-    'Clarinet.toml': `[project]
+  'Clarinet.toml': `[project]
 name = "counter"
 authors = []
 description = "A simple counter on Stacks"

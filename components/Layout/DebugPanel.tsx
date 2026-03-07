@@ -10,11 +10,12 @@ interface DebugPanelProps {
   contractCode?: string;
   contractName?: string;
   theme?: 'dark' | 'light';
+  sessionId?: string;
 }
 
 type DebugTab = 'repl' | 'state' | 'trace';
 
-const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode, contractName, theme }) => {
+const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode, contractName, theme, sessionId }) => {
   const [activeTab, setActiveTab] = useState<DebugTab>('repl');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -66,9 +67,9 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode
 
       <div className="flex-1 overflow-hidden relative">
         <div key={refreshKey} className="h-full">
-          {activeTab === 'repl' && <ClarityRepl contractCode={contractCode} contractName={contractName} theme={theme} />}
-          {activeTab === 'state' && <StateInspector contractCode={contractCode} contractName={contractName} theme={theme} />}
-          {activeTab === 'trace' && <TraceViewer contractCode={contractCode} contractName={contractName} theme={theme} />}
+          {activeTab === 'repl' && <ClarityRepl contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
+          {activeTab === 'state' && <StateInspector contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
+          {activeTab === 'trace' && <TraceViewer contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
         </div>
 
         {!contractName && (
