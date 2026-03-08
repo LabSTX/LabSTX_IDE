@@ -40,6 +40,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   // Helper to find file details for display
   const findFileDetails = (nodes: FileNode[], id: string): { name: string, type: string, isAbi?: boolean, isMd?: boolean, srcName?: string } | null => {
     if (id === '@home') return { name: 'Home', type: 'file' };
+    if (id === '@changelog') return { name: 'Changelog', type: 'file', isMd: true, srcName: 'CHANGELOG.md' };
 
     // ── ABI preview virtual tabs (@abi-{fileId})
     if (id.startsWith('@abi-')) {

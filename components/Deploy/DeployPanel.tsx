@@ -653,36 +653,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             <p className="text-[8px] text-caspier-muted mt-1 italic">Used as the unique ID for this contract on the blockchain</p>
           </div>
 
-          {/* Code Preview */}
-          {selectedFileId && clarityFiles.find(f => f.id === selectedFileId) && (
-            <div className="mt-3 bg-caspier-black border border-caspier-border rounded overflow-hidden ">
-              <div className="px-2.5 py-1.5 border-b border-caspier-border flex justify-between items-center bg-caspier-dark/40">
-                <span className="text-[9px] text-caspier-muted uppercase font-black tracking-widest">Contract Preview</span>
-                <span className="text-[9px] text-labstx-orange font-mono">.clar</span>
-              </div>
-              <div className="h-40 bg-[#0a0a0a]">
-                <CodeEditor
-                  code={clarityFiles.find(f => f.id === selectedFileId)?.content || ''}
-                  language="clarity"
-                  onChange={() => { }}
-                  readOnly={true}
-                  theme={theme}
-                  settings={{
-                    fontSize: 11,
-                    wordWrap: 'on',
-                    minimap: false,
-                    tabSize: 2,
-                    network: 'testnet',
-                    autoCompile: false,
-                    enableOptimization: false,
-                    clarityVersion: '2.0',
-                    aiModel: 'openai/gpt-4o',
-                    aiApiKey: ''
-                  }}
-                />
-              </div>
-            </div>
-          )}
+
         </section>
 
         {/* Network Selection */}

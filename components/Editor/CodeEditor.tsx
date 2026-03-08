@@ -9,43 +9,68 @@ interface CodeEditorProps {
   readOnly?: boolean;
   settings: ProjectSettings;
   theme: 'dark' | 'light';
-  action?: { type: 'undo' | 'redo' | 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number };
+  action?: { type: 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number };
   onSave?: () => void;
   /** When set, opens Monaco's find widget and highlights all matches */
   findQuery?: string;
+  lineEnding?: 'LF' | 'CRLF';
+  onCursorChange?: (position: { lineNumber: number, column: number }) => void;
+  onActionComplete?: () => void;
+  activeFileId?: string | null;
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({
+const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
   code, language, onChange,
   readOnly = false, settings, theme,
-  action, onSave, findQuery
+  action, onSave, findQuery, lineEnding = 'LF',
+  onCursorChange, onActionComplete, activeFileId
 }) => {
   const monaco = useMonaco();
-  const editorRef = React.useRef<any>(null);
+  const [editor, setEditor] = React.useState<any>(null);
+  const lastActionTimestampRef = React.useRef<number>(0);
+  const lastLineEndingRef = React.useRef<string>(''); // Start empty to force sync
+  const lastActiveFileIdRef = React.useRef<string | null>(null);
 
-  // Handle external actions (Undo, Redo, Save, GotoLine)
+  // Robust value synchronization: Only update Monaco if the prop 'code' 
+  // actually differs from the current editor content (ignoring EOL differences).
+  React.useEffect(() => {
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const normalize = (s: string) => s ? s.replace(/\r\n/g, '\n') : '';
+    const currentCode = model.getValue();
+
+    // Only apply if there's a real content change from outside (e.g. Undo/Redo/Switch/Remount)
+    if (normalize(currentCode) !== normalize(code)) {
+      const range = model.getFullModelRange();
+      editor.executeEdits('remote-sync', [{ range, text: code }]);
+    }
+  }, [editor, code, activeFileId]); // Handle content, file, AND mount/instance changes
+
+  // Handle external actions (Save, GotoLine)
   useEffect(() => {
-    if (!editorRef.current || !action || !action.type) return;
+    if (!editor || !action || !action.type || action.timestamp <= lastActionTimestampRef.current) return;
 
-    if (action.type === 'undo') {
-      editorRef.current.trigger('toolbar', 'undo', null);
-    } else if (action.type === 'redo') {
-      editorRef.current.trigger('toolbar', 'redo', null);
-    } else if (action.type === 'save') {
+    lastActionTimestampRef.current = action.timestamp;
+
+    if (action.type === 'save') {
       onSave?.();
     } else if (action.type === 'gotoLine' && action.line) {
       const line = action.line;
       const column = action.column ?? 1;
-      editorRef.current.revealLineInCenter(line);
-      editorRef.current.setPosition({ lineNumber: line, column });
-      editorRef.current.focus();
+      editor.revealLineInCenter(line);
+      editor.setPosition({ lineNumber: line, column });
+      editor.focus();
     }
-  }, [action, onSave]);
+
+    // Notify parent that action is processed so it can be cleared
+    onActionComplete?.();
+  }, [editor, action, onSave, onActionComplete]);
 
   // Handle find-in-code: open Monaco's find widget and set search string
   useEffect(() => {
-    if (!editorRef.current) return;
-    const editor = editorRef.current;
+    if (!editor) return;
     if (findQuery === undefined) return;
     if (findQuery === '') {
       // Close find widget when query is cleared
@@ -63,7 +88,25 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     } catch (e) {
       console.warn('Find widget error:', e);
     }
-  }, [findQuery]);
+  }, [editor, findQuery]);
+
+  // Handle line endings (LF/CRLF) 
+  // Optimized to only run when lineEnding prop actually changes from user intent
+  useEffect(() => {
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const eol = lineEnding === 'CRLF'
+      ? monaco.editor.EndOfLineSequence.CRLF
+      : monaco.editor.EndOfLineSequence.LF;
+
+    // Detect if we actually need a manual EOL swap
+    if (model.getEndOfLineSequence() !== eol) {
+      model.setEOL(eol);
+      lastLineEndingRef.current = lineEnding;
+    }
+  }, [editor, lineEnding, monaco, activeFileId]); // Re-sync when lineEnding OR file changes
 
   useEffect(() => {
     if (monaco) {
@@ -167,14 +210,30 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       <Editor
         height="100%"
         language={mapLanguage(language)}
-        value={code}
+        /* 
+           Uncontrolled mode: We don't pass 'value' here to prevent the library 
+           from triggering 'setValue' on every render. Our useEffect above 
+           handles manual synchronization only when values actually differ.
+        */
+        path={activeFileId || 'default'}
         onChange={onChange}
-        onMount={(editor) => {
-          editorRef.current = editor;
+        onMount={(e) => {
+          setEditor(e);
+
+          // Listen for cursor position changes
+          e.onDidChangeCursorPosition((ev: any) => {
+            const pos = {
+              lineNumber: ev.position.lineNumber,
+              column: ev.position.column
+            };
+
+            // Update App level state (for status bar)
+            onCursorChange?.(pos);
+          });
         }}
         // Initial theme logic is handled by the useEffect above
         theme={theme === 'dark' ? 'caspier-dark' : 'caspier-light'}
-        options={{
+        options={React.useMemo(() => ({
           readOnly,
           minimap: { enabled: settings.minimap },
           fontSize: settings.fontSize,
@@ -187,10 +246,10 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           cursorBlinking: 'smooth',
           cursorSmoothCaretAnimation: 'on',
           renderLineHighlight: 'line',
-        }}
+        }), [readOnly, settings, theme])}
       />
     </div>
   );
-};
+});
 
 export default CodeEditor;

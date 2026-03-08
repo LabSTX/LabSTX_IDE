@@ -4,7 +4,7 @@ import { FileNode, ActivityView, ProjectSettings, GitState, GitCommit, WalletCon
 import {
     FolderIcon, FileIcon, ChevronRightIcon, ChevronDownIcon,
     FilePlusIcon, FolderPlusIcon, EditIcon, TrashIcon, CheckIcon, XIcon,
-    UndoIcon, RedoIcon, SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon, GitBranchIcon, GitCommitIcon,
+    SearchIcon, SettingsIcon, GitIcon, PlusIcon, MinusIcon, RefreshIcon, SmartFileIcon, RocketIcon, GitBranchIcon, GitCommitIcon,
     ReplaceIcon, CaseSensitiveIcon, WholeWordIcon, RegexIcon, CollapseIcon
 } from '../UI/Icons';
 import { Button } from '../UI/Button';
@@ -22,10 +22,6 @@ interface SidebarLeftProps {
     onRenameNode: (id: string, newName: string) => void;
     onDeleteNode: (id: string) => void;
     width: number;
-    onUndo?: () => void;
-    onRedo?: () => void;
-    canUndo?: boolean;
-    canRedo?: boolean;
     settings?: ProjectSettings;
     onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
     gitState?: GitState;
@@ -364,7 +360,6 @@ const SearchResultItem: React.FC<{
 const SidebarLeft: React.FC<SidebarLeftProps> = ({
     files, activeFileId, onFileSelect, activeView,
     onCreateNode, onRenameNode, onDeleteNode, width,
-    onUndo, onRedo, canUndo, canRedo,
     settings, onUpdateSettings,
     gitState, onStageFile, onUnstageFile, onDiscardFile, onCommit, onPush, onSwitchBranch, onCreateBranch,
     wallet, onWalletConnect, onWalletDisconnect, compilationResult, onDeploySuccess,
@@ -574,25 +569,6 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
             <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
                 <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">File Explorer</span>
                 <div className="flex gap-2">
-                    {/* Undo / Redo */}
-                    {(onUndo && onRedo) && (
-                        <div className="flex gap-1 border-r border-caspier-border pr-2 mr-1">
-                            <button
-                                className={`p-1 ${canUndo ? 'text-caspier-muted hover:text-caspier-text' : 'text-caspier-border cursor-not-allowed'}`}
-                                onClick={canUndo ? onUndo : undefined}
-                                title="Undo"
-                            >
-                                <UndoIcon className="w-4 h-4" />
-                            </button>
-                            <button
-                                className={`p-1 ${canRedo ? 'text-caspier-muted hover:text-caspier-text' : 'text-caspier-border cursor-not-allowed'}`}
-                                onClick={canRedo ? onRedo : undefined}
-                                title="Redo"
-                            >
-                                <RedoIcon className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
                     {/* Global Add Actions (Default to Root) */}
                     <button
                         className="text-caspier-muted hover:text-caspier-text p-1"

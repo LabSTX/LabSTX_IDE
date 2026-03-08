@@ -23,6 +23,28 @@ import { filesToFileNodes } from './services/templates';
 import JSZip from 'jszip';
 import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
 
+const CHANGELOG_CONTENT = `# Changelog
+
+All notable changes to the LabSTX IDE will be documented in this file.
+
+## [1.2.0] - 2026-03-07
+### Added
+- Line ending (LF/CRLF) support in the status bar and editor.
+- Changelog button in the status bar.
+
+## [1.1.0] - 2026-03-01
+### Added
+- Enhanced terminal output with color-coded status messages.
+- New project templates for Clarity contracts.
+
+## [1.0.0] - 2026-02-20
+### Added
+- Initial release of LabSTX IDE.
+- Support for Clarity programming language.
+- Integrated Stacks wallet connection.
+- Clarinet-based compilation and debugging.
+`;
+
 function App() {
     const [activeView, setActiveView] = useState<ActivityView>(() => {
         const saved = localStorage.getItem('labstx_active_view');
@@ -96,6 +118,19 @@ function App() {
 
     const [activeContent, setActiveContent] = useState<string>('');
     const [activeLanguage, setActiveLanguage] = useState<string>('clarity');
+    // Tracks which file was last loaded into the editor so we only pull from 'files'
+    // when the user actually switches tabs — never during normal typing.
+    const loadedFileIdRef = useRef<string | null>(null);
+    const [lineEnding, setLineEnding] = useState<'LF' | 'CRLF'>('CRLF');
+    const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
+    const cursorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const handleCursorChange = useCallback((position: { lineNumber: number, column: number }) => {
+        if (cursorTimeoutRef.current) clearTimeout(cursorTimeoutRef.current);
+        cursorTimeoutRef.current = setTimeout(() => {
+            setCursorPosition(position);
+        }, 100);
+    }, []);
 
     // Terminal, Output, Problems State
     const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
@@ -137,12 +172,13 @@ function App() {
     // Editing State
     const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([]);
     const [deletedFilePaths, setDeletedFilePaths] = useState<string[]>([]);
-    const [editorAction, setEditorAction] = useState<{ type: 'undo' | 'redo' | 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number }>({ type: null, timestamp: 0 });
+    const [editorAction, setEditorAction] = useState<{ type: 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number }>({ type: null, timestamp: 0 });
 
     // Search-in-code state (synced to Monaco's find widget)
     const [editorSearchQuery, setEditorSearchQuery] = useState<string>('');
     const [searchFindQuery, setSearchFindQuery] = useState<string | undefined>(undefined);
     const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Debounce the find query passed to the editor (avoids firing on every keystroke)
     const handleSearchChange = useCallback((value: string) => {
@@ -390,8 +426,8 @@ function App() {
     };
 
     // Navigate the editor to a specific file + line/column (used by Problems "Locate")
-    const handleLocateProblem = (fileName: string, line: number, column: number) => {
-        const target = findFileByName(files, fileName);
+    const handleLocateProblem = useCallback((fileName: string, line: number, column: number) => {
+        const target = findFile(files, fileName);
         if (!target) return;
         // Open & activate the file tab
         if (!openFiles.includes(target.id)) {
@@ -402,7 +438,7 @@ function App() {
         setTimeout(() => {
             setEditorAction({ type: 'gotoLine', timestamp: Date.now(), line, column });
         }, 80);
-    };
+    }, [files, openFiles]);
 
     // Helper to get all descendant IDs of a node (including itself)
     const getSubtreeIds = (node: FileNode): string[] => {
@@ -415,8 +451,15 @@ function App() {
         return ids;
     };
 
-    // Update content when active file changes
+    // Update content ONLY when the user switches to a different file tab.
+    // We intentionally do NOT include 'files' in the dependency array — doing so
+    // would re-run this effect on every keystroke (because handleEditorChange
+    // mutates the history/files array), causing Monaco's 'value' prop to reset
+    // mid-edit and jump the cursor to the last line.
     useEffect(() => {
+        if (activeFileId === loadedFileIdRef.current) return; // same file — don't touch the editor
+        loadedFileIdRef.current = activeFileId;
+
         if (activeFileId) {
             const file = findFile(files, activeFileId);
             if (file && file.type === 'file') {
@@ -426,7 +469,8 @@ function App() {
         } else {
             setActiveContent('');
         }
-    }, [activeFileId, files]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeFileId]); // Only re-run when the user switches tabs — NOT on every keystroke
 
     // --- Theme Management ---
     useEffect(() => {
@@ -720,44 +764,50 @@ function App() {
             }
             return prev;
         });
+    }, [history, historyIndex, addToHistory]);
 
-        // If it's the active file, update active content too
-        if (fileId === activeFileId) {
-            setActiveContent(value);
-        }
-    }, [activeFileId, history, historyIndex, addToHistory]);
-
-    const handleEditorChange = (value: string | undefined) => {
+    const handleEditorChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFileId) return;
+        if (value === activeContent) return; // Ignore identical updates
+
+        // Immediate update for the editor's own prop
         setActiveContent(value);
 
-        const updateContentRecursive = (nodes: FileNode[]): FileNode[] => {
-            return nodes.map(node => {
-                if (node.id === activeFileId) {
-                    return { ...node, content: value };
-                }
-                if (node.children) {
-                    return { ...node, children: updateContentRecursive(node.children) };
-                }
-                return node;
+        // Debounce the expensive history tree and dirty state updates
+        if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+        historyDebounceRef.current = setTimeout(() => {
+            const updateContentRecursive = (nodes: FileNode[]): FileNode[] => {
+                return nodes.map(node => {
+                    if (node.id === activeFileId) {
+                        return { ...node, content: value };
+                    }
+                    if (node.children) {
+                        return { ...node, children: updateContentRecursive(node.children) };
+                    }
+                    return node;
+                });
+            };
+
+            setHistory(prev => {
+                const newHist = [...prev];
+                const currentFiles = newHist[historyIndex];
+                if (!currentFiles) return prev;
+                const newFiles = updateContentRecursive(currentFiles);
+                newHist[historyIndex] = newFiles;
+                return newHist;
             });
-        };
 
-        const newFiles = updateContentRecursive(files);
-        // Update in place for editing to prevent history spam
-        setHistory(prev => {
-            const newHist = [...prev];
-            newHist[historyIndex] = newFiles;
-            return newHist;
-        });
+            // Mark as dirty (unsaved)
+            setDirtyFileIds(prev => {
+                if (!prev.includes(activeFileId)) {
+                    return [...prev, activeFileId];
+                }
+                return prev;
+            });
+        }, 300); // 300ms debounce
+    }, [activeFileId, historyIndex]);
 
-        // Mark as dirty (unsaved)
-        if (!dirtyFileIds.includes(activeFileId)) {
-            setDirtyFileIds(prev => [...prev, activeFileId]);
-        }
-    };
-
-    const handleSaveFile = () => {
+    const handleSaveFile = useCallback(() => {
         if (!activeFileId || !dirtyFileIds.includes(activeFileId)) return;
 
         // Move from dirty to git modified
@@ -776,10 +826,12 @@ function App() {
 
         // Trigger save effect in editor if needed
         setEditorAction({ type: 'save', timestamp: Date.now() });
-    };
+    }, [activeFileId, dirtyFileIds, files]);
 
-    const handleEditorUndo = () => setEditorAction({ type: 'undo', timestamp: Date.now() });
-    const handleEditorRedo = () => setEditorAction({ type: 'redo', timestamp: Date.now() });
+    const handleClearEditorAction = useCallback(() => {
+        setEditorAction({ type: null, timestamp: 0 });
+    }, []);
+
 
     const handleCompile = async () => {
         setTerminalLines(prev => [
@@ -1281,8 +1333,13 @@ function App() {
 
     const handleCreateNode = (parentId: string, type: 'file' | 'folder', name: string, initialContent?: string) => {
         const newId = `${name}-${Date.now()}`;
-        const extension = name.split('.').pop() || 'plaintext';
-        const language = extension === 'sol' ? 'sol' : extension === 'rs' ? 'rust' : extension === 'ts' ? 'typescript' : extension === 'js' ? 'javascript' : 'plaintext';
+        const extension = name.split('.').pop()?.toLowerCase() || 'plaintext';
+        const language = (extension === 'clar' || extension === 'clarity') ? 'clarity'
+            : extension === 'sol' ? 'sol'
+                : extension === 'rs' ? 'rust'
+                    : extension === 'ts' ? 'typescript'
+                        : extension === 'js' ? 'javascript'
+                            : 'plaintext';
 
         const newNode: FileNode = {
             id: newId,
@@ -1503,6 +1560,13 @@ function App() {
         setActiveFileId(tabId);
     };
 
+    const handleOpenChangelog = () => {
+        if (!openFiles.includes('@changelog')) {
+            setOpenFiles(['@changelog', ...openFiles]);
+        }
+        setActiveFileId('@changelog');
+    };
+
     // Determines if the Preview button should be enabled
     const previewableFile = (() => {
         if (!activeFileId || activeFileId === '@home') return null;
@@ -1561,10 +1625,6 @@ function App() {
                             onRenameNode={handleRenameNode}
                             onDeleteNode={handleDeleteNode}
                             width={leftWidth}
-                            onUndo={undo}
-                            onRedo={redo}
-                            canUndo={historyIndex > 0}
-                            canRedo={historyIndex < history.length - 1}
                             settings={settings}
                             onUpdateSettings={handleUpdateSettings}
                             gitState={gitState}
@@ -1745,7 +1805,13 @@ function App() {
                                     theme={theme}
                                 />
                             );
-                        })() : activeFileId?.startsWith('@md-') ? (() => {
+                        })() : activeFileId === '@changelog' ? (
+                            <MarkdownPreviewTab
+                                content={CHANGELOG_CONTENT}
+                                fileName="CHANGELOG.md"
+                                theme={theme}
+                            />
+                        ) : activeFileId?.startsWith('@md-') ? (() => {
                             const srcFileId = activeFileId.replace(/^@md-/, '');
                             const srcFile = findFile(files, srcFileId);
                             return (
@@ -1777,7 +1843,11 @@ function App() {
                                 theme={theme}
                                 action={editorAction}
                                 onSave={handleSaveFile}
+                                onActionComplete={handleClearEditorAction}
                                 findQuery={searchFindQuery}
+                                lineEnding={lineEnding}
+                                onCursorChange={handleCursorChange}
+                                activeFileId={activeFileId}
                             />
                         )}
                     </div>
@@ -1836,9 +1906,22 @@ function App() {
                     >
                         🚀 Start Tour
                     </button>
-                    <span>Ln 12, Col 4</span>
-                    <span>LF</span>
+                    <span>Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}</span>
+                    <select
+                        value={lineEnding}
+                        onChange={(e) => setLineEnding(e.target.value as 'LF' | 'CRLF')}
+                        className="bg-transparent border-none outline-none cursor-pointer hover:underline font-bold"
+                    >
+                        <option value="LF" className="bg-caspier-black text-white">LF</option>
+                        <option value="CRLF" className="bg-caspier-black text-white">CRLF</option>
+                    </select>
                     <span>{activeLanguage.toUpperCase()}</span>
+                    <button
+                        onClick={handleOpenChangelog}
+                        className="hover:underline cursor-pointer border border-white/20 px-2 rounded-sm ml-2 bg-white/10 hover:bg-white/20 transition-colors"
+                    >
+                        📜 Changelog
+                    </button>
                     <span>LabSTX v1.2.0</span>
                 </div>
             </div>
