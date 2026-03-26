@@ -1,5 +1,5 @@
 export const ftClarityExample = {
-    'contracts/my-token.clar': `;; Simple Fungible Token (SIP-010-like)
+  'contracts/my-token.clar': `;; Simple Fungible Token (SIP-010-like)
 ;; Basic implementation of a fungible token
 
 (define-fungible-token my-token)
@@ -34,7 +34,7 @@ export const ftClarityExample = {
 (define-public (mint (amount uint) (recipient principal))
   (ft-mint? my-token amount recipient))
 `,
-    'Clarinet.toml': `[project]
+  'Clarinet.toml': `[project]
 name = "my-token"
 authors = []
 description = "A simple fungible token on Stacks"
@@ -42,5 +42,6 @@ telemetry = false
 requirements = []
 [contracts.my-token]
 path = "contracts/my-token.clar"
-clarity_version = 2`
+clarity_version = 3
+epoch = 'latest'`
 };

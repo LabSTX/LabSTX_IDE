@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { XIcon, BugIcon, GithubIcon, SendIcon } from './Icons';
+import { XIcon, BugIcon, GitHubIcon, SendIcon } from './Icons';
+
 import { Button } from './Button';
 
 interface BugReportModalProps {
@@ -157,7 +158,8 @@ ${actual}
 
                     <div className={`p-3 rounded-lg flex items-start gap-3 ${theme === 'dark' ? 'bg-indigo-500/5 border border-indigo-500/10' : 'bg-indigo-50 border border-indigo-100'
                         }`}>
-                        <GithubIcon className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
+                        <GitHubIcon className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
+
                         <p className="text-[11px] leading-relaxed text-caspier-muted">
                             Note: This information will be used to create a GitHub issue. Please do not include sensitive data like private keys or passwords.
                         </p>

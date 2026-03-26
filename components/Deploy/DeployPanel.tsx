@@ -4,7 +4,7 @@ import WalletConnectionComponent from './WalletConnection';
 import { Button } from '../UI/Button';
 import { RocketIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from '../UI/Icons';
 import CodeEditor from '../Editor/CodeEditor';
-import { openContractDeploy, openContractCall } from '@stacks/connect';
+import { openContractCall, request } from '@stacks/connect';
 import { STACKS_TESTNET, STACKS_MAINNET, STACKS_MOCKNET } from '@stacks/network';
 import { StacksWalletService } from '../../services/stacks/wallet';
 import {
@@ -14,6 +14,46 @@ import {
 } from '@stacks/transactions';
 import { bytesToHex, hexToBytes } from '@stacks/common';
 
+const formatClarityType = (type: any): string => {
+  if (!type) return 'unknown';
+  if (typeof type === 'string') return type;
+  
+  if (type.uint128 !== undefined) return 'uint128';
+  if (type.int128 !== undefined) return 'int128';
+  if (type.bool !== undefined) return 'bool';
+  if (type.principal !== undefined) return 'principal';
+  if (type.standard_principal !== undefined) return 'principal';
+  if (type.contract_principal !== undefined) return 'contract_principal';
+  
+  if (type['string-ascii'] !== undefined) {
+    return `string-ascii ${type['string-ascii'].length}`;
+  }
+  if (type['string-utf8'] !== undefined) {
+    return `string-utf8 ${type['string-utf8'].length}`;
+  }
+  
+  if (type.list !== undefined) {
+    return `list (${formatClarityType(type.list.type)})`;
+  }
+  
+  if (type.tuple !== undefined) {
+    const fields = type.tuple.map((f: any) => `${f.name}: ${formatClarityType(f.type)}`).join(', ');
+    return `tuple (${fields})`;
+  }
+  
+  if (type.optional !== undefined) {
+    return `optional (${formatClarityType(type.optional)})`;
+  }
+  
+  if (type.response !== undefined) {
+    const okType = formatClarityType(type.response.ok);
+    const errType = formatClarityType(type.response.error);
+    return `response (ok: ${okType}, err: ${errType})`;
+  }
+
+  return typeof type === 'object' ? JSON.stringify(type) : String(type);
+};
+
 interface DeployPanelProps {
   files: FileNode[];
   wallet: WalletConnection;
@@ -21,11 +61,15 @@ interface DeployPanelProps {
   onWalletDisconnect: () => void;
   compilationResult?: CompilationResult;
   onDeploySuccess?: (contract: DeployedContract) => void;
+  onInteracted?: (contractName: string, entryPoint: string, network: string, metadata: any) => void;
   onAddTerminalLine?: (line: any) => void;
   width?: number;
   theme: 'dark' | 'light';
   settings?: ProjectSettings;
   onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
+  onFileSelect?: (fileId: string) => void;
+  deployedContracts: DeployedContract[];
+  setDeployedContracts: React.Dispatch<React.SetStateAction<DeployedContract[]>>;
 }
 
 const DeployPanel: React.FC<DeployPanelProps> = ({
@@ -35,23 +79,26 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   onWalletDisconnect,
   compilationResult,
   onDeploySuccess,
+  onInteracted,
   onAddTerminalLine,
   width = 320,
   theme,
   settings,
-  onUpdateSettings
+  onUpdateSettings,
+  onFileSelect,
+  deployedContracts,
+  setDeployedContracts
 }) => {
   // Use global settings network as source of truth
   const network = settings?.network || 'testnet';
 
   // Local function to update network (updates global settings)
-  const setNetwork = (newNet: 'testnet' | 'mainnet' | 'devnet') => {
+  const setNetwork = (newNet: 'testnet' | 'mainnet') => {
     if (onUpdateSettings) {
       onUpdateSettings('network', newNet);
     }
   };
   const [deploying, setDeploying] = useState(false);
-  const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string>('');
   const [contractName, setContractName] = useState<string>('');
   const [balance, setBalance] = useState<string>('0.00');
@@ -68,33 +115,46 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   const [interactContractHash, setInteractContractHash] = useState('');
   const [entryPoint, setEntryPoint] = useState('');
   const [argumentsJson, setArgumentsJson] = useState('{}');
+  const [functionArgs, setFunctionArgs] = useState<Record<string, string>>({});
+  const [showJsonInput, setShowJsonInput] = useState(false);
   const [keyName, setKeyName] = useState('');
   const [requestingTokens, setRequestingTokens] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('labstx-deployed-contracts');
-    if (saved) {
-      try {
-        setDeployedContracts(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load deployed contracts:', e);
-      }
-    }
-  }, []);
+  // Advanced Security & Units
+  const [feeUnit, setFeeUnit] = useState<'STX' | 'uSTX'>('uSTX');
+  const [enablePostCondition, setEnablePostCondition] = useState(false);
+  const [postConditionAmount, setPostConditionAmount] = useState('0');
+
+  // Storage Explorer
+  const [queryValue, setQueryValue] = useState<string | null>(null);
+  const [loadingQuery, setLoadingQuery] = useState(false);
+
 
   // Sync wallet address with current network toggle
   useEffect(() => {
-    if (wallet.connected && (wallet.addresses || wallet.address) && onWalletConnect) {
-      const correctAddress = network === 'mainnet'
-        ? (wallet.addresses?.mainnet || wallet.address || '')
-        : (wallet.addresses?.testnet || wallet.address || '');
+    if (wallet.connected && onWalletConnect) {
+      // Prioritize addresses map if available
+      let correctAddress = '';
+      if (wallet.addresses) {
+        correctAddress = network === 'mainnet'
+          ? (wallet.addresses.mainnet || '')
+          : (wallet.addresses.testnet || '');
+      }
 
-      if (wallet.address !== correctAddress || wallet.network !== network) {
-        console.log(`Syncing wallet: Using ${network} address ${correctAddress}`);
+      // Fallback to primary address if it matches the current network type
+      if (!correctAddress && wallet.address) {
+        const isCurrentlyTestnet = wallet.address.startsWith('ST');
+        if ((network === 'testnet' && isCurrentlyTestnet) || (network === 'mainnet' && !isCurrentlyTestnet)) {
+          correctAddress = wallet.address;
+        }
+      }
+
+      if (correctAddress && (wallet.address !== correctAddress || wallet.network !== network)) {
+        console.log(`[WalletSync] switching to ${network} (${correctAddress})`);
         onWalletConnect({
           ...wallet,
           address: correctAddress,
-          network: network
+          network: network as any
         });
       }
     }
@@ -104,15 +164,33 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   useEffect(() => {
     const fetchBalance = async () => {
       if (wallet.connected) {
-        // Use the address matching the network to avoid fetching 0 for wrong principal
-        const addressToUse = network === 'mainnet'
-          ? (wallet.addresses?.mainnet || wallet.address)
-          : (wallet.addresses?.testnet || wallet.address);
+        // Use a temp balance reset to indicate loading
+        setBalance('...');
+
+        // Strictly use the address that matches the network
+        let addressToUse = '';
+        if (wallet.addresses) {
+          addressToUse = network === 'mainnet' ? wallet.addresses.mainnet : wallet.addresses.testnet;
+        }
+
+        // If addresses map is missing or incomplete, check the current primary address
+        if (!addressToUse && wallet.address) {
+          const isStAddress = wallet.address.startsWith('ST');
+          if ((network === 'testnet' && isStAddress) || (network === 'mainnet' && !isStAddress)) {
+            addressToUse = wallet.address;
+          }
+        }
 
         if (addressToUse) {
+          console.log(`[BalanceSync] Fetching for ${addressToUse} on ${network}`);
           const bal = await StacksWalletService.getBalance(addressToUse);
           setBalance(bal);
+        } else {
+          console.warn(`[BalanceSync] No valid address found for ${network}`);
+          setBalance('0.00');
         }
+      } else {
+        setBalance('0.00');
       }
     };
     fetchBalance();
@@ -147,11 +225,16 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   // Sync contract name when file changes
   useEffect(() => {
     const selectedFile = clarityFiles.find(f => f.id === selectedFileId);
-    if (selectedFile) {
-      // Default to sanitized filename
+    if (selectedFile && selectedFile.name) {
       const baseName = selectedFile.name.replace('.clar', '');
-      const sanitized = baseName.toLowerCase().replace(/[^a-z0-9-_]/g, '-').substring(0, 40);
-      setContractName(sanitized);
+      // Ensure we don't accidentally grab a massive string if .name is weird
+      const sanitized = baseName
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]/g, '-')
+        .substring(0, 40);
+
+      // Safety check: if sanitization results in empty string, use a default
+      setContractName(sanitized || 'unnamed-contract');
     }
   }, [selectedFileId, clarityFiles]);
 
@@ -180,6 +263,24 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     };
     checkStatus();
   }, [selectedFileId, wallet.address, wallet.connected, network, clarityFiles]);
+
+  // Sync function arguments when entry point changes
+  useEffect(() => {
+    if (contractInterface && entryPoint) {
+      const func = contractInterface.functions.find((f: any) => f.name === entryPoint);
+      if (func && func.args) {
+        const initialArgs: Record<string, string> = {};
+        func.args.forEach((arg: any) => {
+          initialArgs[arg.name] = '';
+        });
+        setFunctionArgs(initialArgs);
+      } else {
+        setFunctionArgs({});
+      }
+    } else {
+      setFunctionArgs({});
+    }
+  }, [entryPoint, contractInterface]);
 
   const handleDeploy = async () => {
     const selectedFile = clarityFiles.find(f => f.id === selectedFileId);
@@ -218,79 +319,151 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
 
     try {
-      const stxNetwork = network === 'mainnet'
-        ? STACKS_MAINNET
-        : network === 'testnet'
-          ? STACKS_TESTNET
-          : STACKS_MOCKNET;
-
-      const deployOptions: any = {
-        contractName: contractName.trim(),
-        codeBody: selectedFile.content,
-        network: stxNetwork,
-        appDetails: {
-          name: 'LabSTX IDE',
-          icon: window.location.origin + '/logo192.png',
-        },
-        onFinish: (data: any) => {
-          console.log('Stacks Transaction broadcast:', data);
-
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'success',
-              content: `Contract deployment broadcasted! TXID: ${data.txId.substring(0, 16)}...`
-            });
-          }
-
-          const newContract: DeployedContract = {
-            id: Date.now().toString(),
-            name: contractName,
-            contractHash: `${wallet.address}.${contractName}`,
-            deployHash: data.txId,
-            network,
-            timestamp: Date.now(),
-          };
-
-          const updated = [newContract, ...deployedContracts];
-          setDeployedContracts(updated);
-          localStorage.setItem('labstx-deployed-contracts', JSON.stringify(updated));
-
-          if (onDeploySuccess) {
-            onDeploySuccess(newContract);
-          }
-          setDeploying(false);
-        },
-        onCancel: () => {
-          console.log('Deployment cancelled');
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'info',
-              content: 'Deployment cancelled by user.'
-            });
-          }
-          setDeploying(false);
+      // 1. Sanitize Clarity Code (in case it is JSON-wrapped)
+      let clarityCode = selectedFile.content || '';
+      if (clarityCode.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(clarityCode);
+          if (parsed.json) clarityCode = parsed.json;
+          else if (parsed.code) clarityCode = parsed.code;
+          else if (parsed.content) clarityCode = parsed.content;
+        } catch (e) {
+          console.warn('[Deploy] Content starts with { but is not valid JSON, using raw string');
         }
+      }
+
+      // 2. Prepare Deployment Parameters
+      // We use redundant keys (name/contractName, clarityCode/codeBody) 
+      // to ensure compatibility across different wallet versions and library wrappers.
+      const deployParams: any = {
+        name: contractName.trim(),
+        contractName: contractName.trim(),
+        clarityCode: clarityCode,
+        codeBody: clarityCode,
+        // @ts-ignore - mapping network string
+        network: network,
+        postConditionMode: 'allow',
+        clarityVersion: settings?.clarityVersion ? parseInt(settings.clarityVersion) : 2,
+      };
+
+      // Add project details for better wallet UI
+      deployParams.appDetails = {
+        name: 'LabSTX IDE',
+        icon: window.location.origin + '/logo192.png',
       };
 
       // Add custom fee if specified
       if (customFee) {
-        deployOptions.fee = customFee;
+        let microStx = feeUnit === 'STX'
+          ? BigInt(Math.floor(parseFloat(customFee) * 1000000))
+          : BigInt(customFee);
+        deployParams.fee = microStx.toString();
       }
 
       // Add custom nonce if specified
       if (customNonce) {
-        deployOptions.nonce = customNonce;
+        deployParams.nonce = customNonce;
       }
 
-      await openContractDeploy(deployOptions);
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'info',
+          content: `Debug: Contract [${deployParams.name}] | Network: ${deployParams.network} | Clarity: v${deployParams.clarityVersion}`
+        });
+        onAddTerminalLine({
+          type: 'info',
+          content: `Debug: Code size: ${clarityCode.length} chars | Fee: ${deployParams.fee || 'Auto'} | Nonce: ${deployParams.nonce || 'Auto'}`
+        });
+      }
+
+      const result = await request('stx_deployContract', deployParams);
+
+        if (result && result.txid) {
+          console.log('Stacks Transaction broadcast:', result);
+
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'success',
+              content: `Contract deployment broadcasted! TXID: ${result.txid.substring(0, 16)}...`
+            });
+          }
+
+          const newContract: DeployedContract = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: contractName,
+            contractHash: `${wallet.address}.${contractName}`,
+            deployHash: result.txid,
+            network: network,
+            timestamp: Date.now(),
+            originalFileId: selectedFileId,
+            entryPoints: compilationResult?.metadata?.entryPoints || []
+          };
+
+          if (onDeploySuccess) {
+            onDeploySuccess(newContract);
+          }
+
+          // Telemetry Ingest for success
+          fetch('/ide-api/stats/ingest', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  eventType: 'DEPLOYMENT',
+                  wallet: wallet.address || 'unconnected',
+                  payload: {
+                      contractName: contractName,
+                      network: network,
+                      status: 'success',
+                      metadata: {
+                          deployHash: result.txid,
+                          gas: '0.00 STX' // Placeholder as we don't have final gas yet
+                      }
+                  }
+              })
+          }).catch(err => console.error('Telemetry failed:', err));
+        }
+      setDeploying(false);
 
     } catch (error: any) {
       console.error('Deployment error:', error);
-      if (onAddTerminalLine) {
-        onAddTerminalLine({
-          type: 'error',
-          content: `Deployment failed: ${error.message}`
-        });
+
+      // Check if it's a cancellation or a real error
+      const isCancel = error?.message?.includes('cancel') || error === 'cancel' || error?.code === 'user_rejection';
+
+      // Telemetry Ingest for failure (if not cancelled)
+      if (!isCancel) {
+          fetch('/ide-api/stats/ingest', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  eventType: 'DEPLOYMENT',
+                  wallet: wallet.address || 'unconnected',
+                  payload: {
+                      contractName: contractName,
+                      network: network,
+                      status: 'failure',
+                      metadata: {
+                          error: error.message || 'Unknown error'
+                      }
+                  }
+              })
+          }).catch(err => console.error('Telemetry failed:', err));
+      }
+
+      if (isCancel) {
+        if (onAddTerminalLine) {
+          onAddTerminalLine({
+            type: 'info',
+            content: 'Deployment cancelled by user.'
+          });
+        }
+      } else {
+        if (onAddTerminalLine) {
+          onAddTerminalLine({
+            type: 'error',
+            content: `Deployment failed: ${error.message || 'Unknown error'}`
+          });
+        }
       }
       setDeploying(false);
     }
@@ -328,26 +501,57 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
       const parts = interactContractHash.split('.');
       if (parts.length !== 2) throw new Error('Invalid contract hash format. Expected: principal.contract-name');
 
-      const [contractAddress, contractName] = parts;
+      const [targetAddress, targetContractName] = parts;
 
       let cvArgs: ClarityValue[] = [];
-      try {
-        const trimmedJson = argumentsJson.trim();
-        if (!trimmedJson || trimmedJson === '{}' || trimmedJson === '[]') {
-          cvArgs = [];
-        } else {
-          const parsed = JSON.parse(trimmedJson);
-          if (Array.isArray(parsed)) {
-            cvArgs = parsed.map(toCV);
+      
+      if (showJsonInput) {
+        try {
+          const trimmedJson = argumentsJson.trim();
+          if (!trimmedJson || trimmedJson === '{}' || trimmedJson === '[]') {
+            cvArgs = [];
           } else {
-            // Check if it's a single value or a keyed object that should be a tuple
-            cvArgs = [toCV(parsed)];
+            const parsed = JSON.parse(trimmedJson);
+            if (Array.isArray(parsed)) {
+              cvArgs = parsed.map(toCV);
+            } else {
+              cvArgs = [toCV(parsed)];
+            }
           }
+        } catch (e) {
+          console.warn('Arguments parsing failed, sending empty args');
         }
-        console.log('Final Clarity Arguments:', cvArgs);
-      } catch (e) {
-        console.warn('Arguments parsing failed, sending empty args');
+      } else {
+        // Use auto-generated arguments
+        const func = contractInterface?.functions.find((f: any) => f.name === entryPoint);
+        if (func && func.args) {
+          cvArgs = func.args.map((argDef: any) => {
+            const rawValue = functionArgs[argDef.name] || '';
+            const typeStr = formatClarityType(argDef.type);
+
+            // Conversion logic based on type
+            if (typeStr === 'uint128') return uintCV(rawValue || 0);
+            if (typeStr === 'int128') return intCV(rawValue || 0);
+            if (typeStr === 'bool') return rawValue.toLowerCase() === 'true' ? trueCV() : falseCV();
+            if (typeStr.includes('principal')) {
+              return principalCV(rawValue);
+            }
+            if (typeStr.startsWith('string-ascii')) return stringAsciiCV(rawValue);
+            if (typeStr.startsWith('string-utf8')) return stringUtf8CV(rawValue);
+            
+            // Fallback for complex types or others
+            try {
+              if (typeof rawValue === 'string' && (rawValue.startsWith('{') || rawValue.startsWith('['))) {
+                return toCV(JSON.parse(rawValue));
+              }
+            } catch (e) {}
+            
+            return stringUtf8CV(rawValue);
+          });
+        }
       }
+
+      console.log('Final Clarity Arguments:', cvArgs);
 
       // Network check
       if (wallet.network && wallet.network !== network) {
@@ -365,14 +569,39 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             args: argumentsJson
           }
         });
+        onAddTerminalLine({
+          type: 'info',
+          content: `Debug: Target: ${targetAddress}.${targetContractName} | Function: ${entryPoint} | Network: ${network}`
+        });
+      }
+
+      // Post-Conditions
+      const postConditions: any[] = [];
+      if (enablePostCondition && postConditionAmount && parseFloat(postConditionAmount) > 0) {
+        try {
+          // Import necessary functions if they weren't imported
+          const { createSTXPostCondition, FungibleConditionCode } = await import('@stacks/transactions');
+          const microStx = Math.floor(parseFloat(postConditionAmount) * 1000000);
+
+          const postCondition = createSTXPostCondition(
+            wallet.address!,
+            FungibleConditionCode.LessEqual,
+            microStx.toString()
+          );
+          postConditions.push(postCondition);
+          console.log(`Added STX Post-Condition: User transfers <= ${postConditionAmount} STX`);
+        } catch (pcErr) {
+          console.error('Failed to create post-condition:', pcErr);
+        }
       }
 
       await openContractCall({
-        contractAddress: contractAddress.trim(),
-        contractName: contractName.trim(),
+        contractAddress: targetAddress.trim(),
+        contractName: targetContractName.trim(),
         functionName: entryPoint.trim(),
         functionArgs: cvArgs,
         network: stxNetwork,
+        postConditions,
         appDetails: {
           name: 'LabSTX IDE',
           icon: window.location.origin + '/logo192.png',
@@ -382,9 +611,37 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
           if (onAddTerminalLine) {
             onAddTerminalLine({
               type: 'success',
-              content: `Contract call broadcasted! TXID: ${data.txId.substring(0, 16)}...`
+              content: `Contract call broadcasted! TXID: ${data.txId}`
+            });
+            onAddTerminalLine({
+              type: 'info',
+              content: 'Debug with stxer.xyz',
+              data: { action: 'debug', txId: data.txId }
             });
           }
+          
+          if (onInteracted) {
+              onInteracted(interactContractHash, entryPoint, network, { txId: data.txId });
+          }
+
+          // Telemetry Ingest for Interaction
+          fetch('/ide-api/stats/ingest', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  eventType: 'INTERACTION',
+                  wallet: wallet.address || 'unconnected',
+                  payload: {
+                      contractName: interactContractHash,
+                      functionName: entryPoint,
+                      network: network,
+                      status: 'success',
+                      metadata: {
+                          txId: data.txId
+                      }
+                  }
+              })
+          }).catch(err => console.error('Telemetry failed:', err));
         },
         onCancel: () => {
           console.log('Call cancelled');
@@ -407,57 +664,11 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
   };
 
-  const handleRequestTokens = async () => {
-    if (!wallet.address || !wallet.connected) {
-      alert('Please connect your wallet first.');
-      return;
-    }
 
-    setRequestingTokens(true);
-    if (onAddTerminalLine) {
-      onAddTerminalLine({
-        type: 'command',
-        content: `Requesting testnet STX tokens for ${wallet.address}...`
-      });
-    }
-
-    try {
-      const result = await StacksWalletService.requestTestnetTokens(wallet.address);
-      console.log('Faucet result:', result);
-
-      if (result.success || result.txid) {
-        if (onAddTerminalLine) {
-          onAddTerminalLine({
-            type: 'success',
-            content: `Tokens requested successfully! It may take a few minutes to reflect in your balance.`
-          });
-        }
-        // Refresh balance after a short delay
-        setTimeout(async () => {
-          const bal = await StacksWalletService.getBalance(wallet.address!);
-          setBalance(bal);
-        }, 5000);
-      } else {
-        throw new Error(result.reason || result.message || 'Unknown error from faucet.');
-      }
-    } catch (err: any) {
-      console.error('Faucet error:', err);
-      if (onAddTerminalLine) {
-        onAddTerminalLine({
-          type: 'error',
-          content: `Faucet request failed: ${err.message}`
-        });
-      }
-      alert(`Faucet Error: ${err.message}`);
-    } finally {
-      setRequestingTokens(false);
-    }
-  };
 
   const clearHistory = () => {
     if (confirm('Clear all deployment history?')) {
       setDeployedContracts([]);
-      localStorage.removeItem('labstx-deployed-contracts');
     }
   };
 
@@ -497,15 +708,48 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
       let cvArgs: string[] = [];
       try {
-        const parsed = JSON.parse(argumentsJson);
-        const argsArray = Array.isArray(parsed) ? parsed : [parsed];
-        cvArgs = argsArray.map(arg => {
-          const cv = toCV(arg);
+        let rawCvArgs: ClarityValue[] = [];
+        
+        if (showJsonInput) {
+          const parsed = JSON.parse(argumentsJson);
+          const argsArray = Array.isArray(parsed) ? parsed : [parsed];
+          rawCvArgs = argsArray.map(toCV);
+        } else {
+          // Use auto-generated arguments from entryPoint/keyName
+          // First try to find the definition in ABI
+          const func = contractInterface?.functions.find((f: any) => f.name === keyName) || 
+                       contractInterface?.functions.find((f: any) => f.name === entryPoint);
+          
+          if (func && func.args) {
+            rawCvArgs = func.args.map((argDef: any) => {
+              const rawValue = functionArgs[argDef.name] || '';
+              const typeStr = formatClarityType(argDef.type);
+              if (typeStr === 'uint128') return uintCV(rawValue || 0);
+              if (typeStr === 'int128') return intCV(rawValue || 0);
+              if (typeStr === 'bool') return rawValue.toLowerCase() === 'true' ? trueCV() : falseCV();
+              if (typeStr.includes('principal')) {
+                return principalCV(rawValue);
+              }
+              if (typeStr.startsWith('string-ascii')) return stringAsciiCV(rawValue);
+              if (typeStr.startsWith('string-utf8')) return stringUtf8CV(rawValue);
+              return stringUtf8CV(rawValue);
+            });
+          }
+        }
+
+        cvArgs = rawCvArgs.map(cv => {
           const bytes = serializeCV(cv);
           return '0x' + (typeof bytes === 'string' ? bytes : bytesToHex(bytes as Uint8Array));
         });
       } catch (e) {
-        console.warn('Query arguments parsing failed, sending empty');
+        console.warn('Query arguments parsing failed', e);
+      }
+
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'info',
+          content: `Debug: Querying State [${keyName}] from ${contractAddress}.${contractName} on ${network}`
+        });
       }
 
       console.log(`Querying ${keyName}...`);
@@ -550,6 +794,22 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             });
           }
 
+          // Telemetry Ingest for Query
+          fetch('/ide-api/stats/ingest', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  eventType: 'QUERY',
+                  wallet: wallet.address || 'unconnected',
+                  payload: {
+                      contractName: interactContractHash,
+                      functionName: keyName,
+                      network: network,
+                      status: 'success'
+                  }
+              })
+          }).catch(err => console.error('Telemetry failed:', err));
+
           // alert(`Query Result:\n${formatted}`);
         } catch (decodeErr) {
           console.warn('Failed to decode result hex, showing raw:', decodeErr);
@@ -571,6 +831,57 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
   };
 
+  const fetchStateValue = async (targetKey: string, isMap: boolean = false) => {
+    if (!interactContractHash || !targetKey) return;
+
+    setLoadingQuery(true);
+    setQueryValue(null);
+
+    try {
+      const [targetAddress, targetContractName] = interactContractHash.split('.');
+      const apiUrl = network === 'mainnet' ? 'https://api.mainnet.hiro.so' : 'https://api.testnet.hiro.so';
+
+      if (isMap) {
+        if (onAddTerminalLine) onAddTerminalLine({ type: 'info', content: `To query map ${targetKey}, please use the Entry Point area with the map-get logic.` });
+      } else {
+        const response = await fetch(`${apiUrl}/v2/contracts/call-read/${targetAddress}/${targetContractName}/${targetKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: wallet.address || targetAddress,
+            arguments: []
+          })
+        });
+
+        const result = await response.json();
+        if (result.okay) {
+          const hex = result.result.startsWith('0x') ? result.result.slice(2) : result.result;
+          const decodedCV = deserializeCV(hexToBytes(hex));
+          const humanReadable = cvToValue(decodedCV);
+
+          const formatted = typeof humanReadable === 'object'
+            ? JSON.stringify(humanReadable, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
+            : String(humanReadable);
+
+          setQueryValue(formatted);
+          if (onAddTerminalLine) {
+            onAddTerminalLine({
+              type: 'query',
+              content: `State fetched: ${targetKey}`,
+              data: { result: formatted }
+            });
+          }
+        } else {
+          setQueryValue(`Error: ${result.cause || 'Unknown'}`);
+        }
+      }
+    } catch (err: any) {
+      setQueryValue(`Error: ${err.message}`);
+    } finally {
+      setLoadingQuery(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 border-b border-caspier-border flex items-center gap-2 bg-caspier-black min-w-0">
@@ -588,18 +899,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">BALANCE:</h3>
-              {network === 'testnet' && wallet.connected && (
-                <button
-                  onClick={handleRequestTokens}
-                  disabled={requestingTokens}
-                  className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border transition-all ${requestingTokens
-                    ? 'bg-caspier-dark border-caspier-border text-caspier-muted cursor-not-allowed'
-                    : 'bg-labstx-orange/10 border-labstx-orange/30 text-labstx-orange hover:bg-labstx-orange hover:text-white hover:border-labstx-orange'
-                    }`}
-                >
-                  {requestingTokens ? 'Requesting...' : 'Get Tokens'}
-                </button>
-              )}
+
             </div>
             {wallet.connected && (
               <span className="text-[10px] font-mono font-bold text-labstx-orange bg-labstx-orange/10 px-1.5 py-0.5 rounded">
@@ -616,7 +916,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             wallet={wallet}
             onConnect={onWalletConnect}
             onDisconnect={onWalletDisconnect}
-            network={network}
+            network={network as any}
           />
         </section>
 
@@ -659,14 +959,17 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         {/* Network Selection */}
         <section>
           <h3 className="text-[10px] font-bold text-caspier-muted mb-2 uppercase tracking-tight">Network</h3>
-          <div className="grid grid-cols-3 gap-1">
-            {(['mainnet', 'testnet', 'devnet'] as const).map((net) => (
+          <div className="grid grid-cols-2 gap-1">
+            {(['mainnet', 'testnet'] as const).map((net) => (
               <button
                 key={net}
-                onClick={() => setNetwork(net)}
+                onClick={() => !wallet.connected && setNetwork(net)}
+                disabled={wallet.connected && network !== net}
                 className={`px-1 py-1.5 text-[10px] font-bold uppercase border rounded-sm transition-all ${network === net
                   ? 'bg-labstx-orange border-labstx-orange text-white'
-                  : 'bg-caspier-dark border-caspier-border text-caspier-muted hover:border-labstx-orange'
+                  : wallet.connected
+                    ? 'bg-caspier-dark border-caspier-border text-caspier-muted cursor-not-allowed opacity-50 grayscale'
+                    : 'bg-caspier-dark border-caspier-border text-caspier-muted hover:border-labstx-orange'
                   }`}
               >
                 {net}
@@ -688,14 +991,54 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
           {showAdvanced && (
             <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
               <div>
-                <label className="text-[9px] text-caspier-muted mb-1 block">Custom Fee (uSTX)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-caspier-muted block">Custom Fee ({feeUnit})</label>
+                  <div className="flex bg-caspier-black rounded border border-caspier-border p-0.5">
+                    {(['uSTX', 'STX'] as const).map(u => (
+                      <button
+                        key={u}
+                        onClick={() => setFeeUnit(u)}
+                        className={`px-1.5 py-0.5 text-[8px] font-black rounded-xs transition-colors ${feeUnit === u ? 'bg-labstx-orange text-white' : 'text-caspier-muted hover:text-caspier-text'}`}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <input
                   type="text"
-                  placeholder="e.g. 2000"
+                  placeholder={feeUnit === 'uSTX' ? "e.g. 2000" : "e.g. 0.002"}
                   value={customFee}
                   onChange={(e) => setCustomFee(e.target.value)}
                   className="w-full bg-caspier-dark border border-caspier-border text-caspier-text px-2 py-1.5 text-xs focus:border-labstx-orange outline-none"
                 />
+              </div>
+
+              <div className="pt-2 border-t border-caspier-border">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[9px] text-caspier-muted font-bold uppercase">STX Transfer Cap</label>
+                  <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={enablePostCondition}
+                      onChange={(e) => setEnablePostCondition(e.target.checked)}
+                    />
+                    <div className="w-7 h-4 bg-caspier-dark peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-labstx-orange"></div>
+                  </label>
+                </div>
+                {enablePostCondition && (
+                  <div className="space-y-1 animate-in slide-in-from-top-1">
+                    <input
+                      type="number"
+                      placeholder="Max STX to transfer"
+                      value={postConditionAmount}
+                      onChange={(e) => setPostConditionAmount(e.target.value)}
+                      className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-1.5 text-xs focus:border-labstx-orange outline-none"
+                    />
+                    <p className="text-[8px] text-caspier-muted italic leading-tight">Prevents contract from taking more than {postConditionAmount || '0'} STX from your wallet.</p>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-[9px] text-caspier-muted mb-1 block">Custom Nonce</label>
@@ -714,7 +1057,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         {/* Deploy Button */}
         <div className="space-y-2">
           {isAlreadyDeployed && (
-            <div className="p-2 bg-labstx-orange/10 border border-labstx-orange/30 rounded text-[10px] text-labstx-orange flex items-start justify-between gap-2">
+            <div className="p-2 bg-labstx-orange/10 border border-caspier-border rounded text-[10px] text-labstx-orange flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
                 <CheckIcon className="w-3 h-3 flex-shrink-0" />
                 <span>Already deployed on-chain</span>
@@ -736,72 +1079,14 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
           )}
           <Button
             onClick={handleDeploy}
-            disabled={deploying || !wallet.connected || clarityFiles.length === 0 || checkingDeployment}
+            disabled={deploying || !wallet.connected || clarityFiles.length === 0 || checkingDeployment || isAlreadyDeployed}
             className={`w-full h-11 font-bold uppercase tracking-widest text-xs transition-all ${wallet.connected ? 'shadow-[4px_4px_0_0_rgba(255,107,0,0.3)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_rgba(255,107,0,0.4)]' : ''
               } ${isAlreadyDeployed ? 'opacity-80' : ''}`}
             variant="primary"
           >
-            {checkingDeployment ? 'Checking...' : deploying ? 'Broadcasting...' : isAlreadyDeployed ? 'Redeploy' : 'Deploy'}
+            {checkingDeployment ? 'Checking...' : deploying ? 'Broadcasting...' : isAlreadyDeployed ? 'Contract is deployed' : 'Deploy'}
           </Button>
         </div>
-
-        {/* Deployed Contracts List */}
-        <section className="pt-4 border-t border-caspier-border">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">Activity History</h3>
-            {deployedContracts.length > 0 && (
-              <button
-                onClick={clearHistory}
-                className="text-[9px] text-caspier-muted hover:text-caspier-red font-bold uppercase"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          {deployedContracts.length === 0 ? (
-            <div className="text-caspier-muted text-[11px] italic text-center py-4 bg-caspier-dark/30 rounded border border-dashed border-caspier-border">
-              No recent deployments
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {deployedContracts.map(contract => (
-                <div key={contract.id} className="p-2.5 bg-caspier-black border border-caspier-border rounded-sm text-[11px] group hover:border-labstx-orange transition-colors">
-                  <div className="flex justify-between items-start mb-1.5">
-                    <span className="text-caspier-text font-bold truncate pr-2">{contract.name}</span>
-                    <button
-                      onClick={() => setInteractContractHash(contract.contractHash)}
-                      className="text-[9px] text-labstx-orange hover:underline font-bold"
-                    >
-                      Use
-                    </button>
-                    <span className={`text-[9px] px-1 rounded-px uppercase font-black ${contract.network === 'mainnet' ? 'bg-green-900/40 text-green-400' : 'bg-labstx-orange/20 text-labstx-orange'
-                      }`}>
-                      {contract.network}
-                    </span>
-                  </div>
-                  <div className="text-caspier-muted space-y-1 font-mono">
-                    <div className="flex justify-between">
-                      <span className="opacity-50">TXID:</span>
-                      <a
-                        href={contract.network === 'mainnet'
-                          ? `https://explorer.stacks.co/txid/${contract.deployHash}?chain=mainnet`
-                          : `https://explorer.stacks.co/txid/${contract.deployHash}?chain=testnet`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-labstx-orange hover:underline truncate ml-2"
-                      >
-                        {contract.deployHash.substring(0, 12)}...
-                      </a>
-                    </div>
-                    <div className="truncate opacity-80">
-                      {contract.contractHash}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
 
         {/* Interact with Contract */}
         <section id="interaction-section" className="pt-6 border-t border-caspier-border space-y-5">
@@ -905,14 +1190,62 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
               />
             </div>
 
-            <div>
-              <label className="text-[9px] font-bold text-caspier-muted mb-1 block uppercase tracking-tight">Arguments (JSON)</label>
-              <textarea
-                placeholder="{}"
-                value={argumentsJson}
-                onChange={(e) => setArgumentsJson(e.target.value)}
-                className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono h-20 resize-none"
-              />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[9px] font-bold text-caspier-muted block uppercase tracking-tight">
+                  {showJsonInput ? 'Arguments (JSON)' : 'Function Arguments'}
+                </label>
+                <button
+                  onClick={() => setShowJsonInput(!showJsonInput)}
+                  className="text-[9px] font-bold text-labstx-orange hover:underline uppercase tracking-tighter"
+                >
+                  {showJsonInput ? 'Use Auto-Fields' : 'Use Raw JSON'}
+                </button>
+              </div>
+
+              {showJsonInput ? (
+                <textarea
+                  placeholder="{}"
+                  value={argumentsJson}
+                  onChange={(e) => setArgumentsJson(e.target.value)}
+                  className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono h-24 resize-none"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    const func = contractInterface?.functions.find((f: any) => f.name === entryPoint);
+                    if (func && func.args && func.args.length > 0) {
+                      return func.args.map((arg: any) => (
+                        <div key={arg.name}>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-mono text-caspier-text">{arg.name}</span>
+                            <span className="text-[8px] font-mono text-caspier-muted italic bg-caspier-black px-1 rounded border border-caspier-border">{formatClarityType(arg.type)}</span>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder={formatClarityType(arg.type) === 'uint128' ? 'e.g. 1000' : formatClarityType(arg.type) === 'bool' ? 'true / false' : `Enter ${arg.name}...`}
+                            value={functionArgs[arg.name] || ''}
+                            onChange={(e) => setFunctionArgs({ ...functionArgs, [arg.name]: e.target.value })}
+                            className="w-full bg-caspier-dark border border-caspier-border text-caspier-text px-2 py-1.5 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono"
+                          />
+                        </div>
+                      ));
+                    } else if (entryPoint) {
+                      return (
+                        <div className="p-3 bg-caspier-black/30 border border-caspier-border rounded border-dashed text-center">
+                          <p className="text-[10px] text-caspier-muted italic">No arguments needed for this function</p>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="p-3 bg-caspier-black/30 border border-caspier-border rounded border-dashed text-center">
+                          <p className="text-[10px] text-caspier-muted italic">Select a function to see its arguments</p>
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -934,7 +1267,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             </div>
 
             <div>
-              <label className="text-[9px] font-bold text-caspier-muted mb-1 block uppercase tracking-tight">Key Name</label>
+              <label className="text-[9px] font-bold text-caspier-muted mb-1 block uppercase tracking-tight">Key / Var Name</label>
               <input
                 type="text"
                 placeholder="count"
@@ -945,16 +1278,83 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Button
-                onClick={handleQueryState}
-                className="w-full text-[10px] font-black uppercase tracking-widest py-2 bg-caspier-dark border-caspier-border text-caspier-text hover:border-labstx-orange transition-all"
-                variant="secondary"
-              >
-                Query State
-              </Button>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  onClick={handleQueryState}
+                  className="w-full text-[10px] font-black uppercase tracking-widest py-2 bg-caspier-dark border-caspier-border text-caspier-text hover:border-labstx-orange transition-all"
+                  variant="secondary"
+                >
+                  Query State
+                </Button>
+              </div>
+
+              {queryValue && (
+                <div className="p-2 bg-caspier-black border border-caspier-border rounded animate-in fade-in zoom-in duration-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[8px] text-caspier-muted uppercase font-bold tracking-tighter">Result</span>
+                    <button onClick={() => setQueryValue(null)} className="text-[8px] text-caspier-muted hover:text-white">CLEAR</button>
+                  </div>
+                  <pre className="text-[10px] font-mono text-green-400 break-all whitespace-pre-wrap max-h-32 overflow-y-auto">
+                    {queryValue}
+                  </pre>
+                </div>
+              )}
+
               <p className="text-[8px] text-caspier-muted text-center leading-tight">No gas required - reads state directly from chain</p>
             </div>
           </div>
+
+          {/* Quick Explorer (Maps & Variables) */}
+          {contractInterface && (contractInterface.variables.length > 0 || contractInterface.maps.length > 0) && (
+            <div className="bg-caspier-black/30 border border-caspier-border rounded-lg p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black text-caspier-muted uppercase tracking-tighter">Storage Explorer</h4>
+                <div className="w-1.5 h-1.5 rounded-full bg-labstx-orange" />
+              </div>
+
+              <div className="space-y-4 max-h-64 overflow-y-auto pr-1 thin-scrollbar">
+                {contractInterface.variables.length > 0 && (
+                  <div>
+                    <p className="text-[8px] font-black text-caspier-muted mb-1.5 uppercase opacity-60">Constants & Variables</p>
+                    <div className="flex flex-wrap gap-1">
+                      {contractInterface.variables.map((v: any) => (
+                        <button
+                          key={v.name}
+                          onClick={() => {
+                            setKeyName(v.name);
+                            fetchStateValue(v.name);
+                          }}
+                          className="px-2 py-0.5 text-[9px] font-mono bg-caspier-dark border border-caspier-border rounded hover:border-labstx-orange transition-colors"
+                        >
+                          {v.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {contractInterface.maps.length > 0 && (
+                  <div>
+                    <p className="text-[8px] font-black text-caspier-muted mb-1.5 uppercase opacity-60">Maps (Requires Key)</p>
+                    <div className="flex flex-wrap gap-1">
+                      {contractInterface.maps.map((m: any) => (
+                        <button
+                          key={m.name}
+                          onClick={() => {
+                            setKeyName(m.name);
+                            if (onAddTerminalLine) onAddTerminalLine({ type: 'info', content: `Query map ${m.name} using the arguments field below.` });
+                          }}
+                          className="px-2 py-0.5 text-[9px] font-mono bg-caspier-dark border border-caspier-border rounded hover:border-labstx-orange transition-colors"
+                        >
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>

@@ -198,7 +198,7 @@ const Badge: React.FC<{ label: string; color: string }> = ({ label, color }) => 
 
 const accessBadge = (access: AbiFunction['access']) => {
     switch (access) {
-        case 'public': return <Badge label="public" color="bg-labstx-orange/15 text-labstx-orange border border-labstx-orange/30" />;
+        case 'public': return <Badge label="public" color="bg-labstx-orange/15 text-labstx-orange border border-caspier-border" />;
         case 'read-only': return <Badge label="read-only" color="bg-blue-500/15 text-blue-400 border border-blue-500/30" />;
         case 'private': return <Badge label="private" color="bg-caspier-muted/15 text-caspier-muted border border-caspier-muted/30" />;
     }
@@ -243,9 +243,17 @@ const FunctionCard: React.FC<{ fn: AbiFunction; onCopy: (text: string) => void }
 
     return (
         <div className="rounded-lg border border-caspier-border bg-caspier-black/50 overflow-hidden transition-all hover:border-caspier-muted/50">
-            <button
+            <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setOpen(o => !o)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-caspier-hover/30 transition-colors"
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setOpen(o => !o);
+                    }
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-caspier-hover/30 transition-colors cursor-pointer group"
             >
                 {open
                     ? <ChevronDownIcon className="w-3 h-3 text-caspier-muted flex-shrink-0" />
@@ -261,7 +269,7 @@ const FunctionCard: React.FC<{ fn: AbiFunction; onCopy: (text: string) => void }
                 >
                     <CopyIcon className="w-3 h-3" />
                 </button>
-            </button>
+            </div>
 
             {open && (
                 <div className="px-4 pb-4 pt-1 border-t border-caspier-border bg-caspier-dark/30 space-y-3">
@@ -413,7 +421,7 @@ const AbiPreviewTab: React.FC<AbiPreviewTabProps> = ({ code, fileName, theme }) 
             <div className={`flex-shrink-0 px-6 py-4 border-b ${theme === 'light' ? 'border-gray-200 bg-white' : 'border-caspier-border bg-caspier-black/60'}`}>
                 <div className="flex items-center justify-between gap-4 mb-3">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-labstx-orange/15 border border-labstx-orange/30 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-labstx-orange/15 border border-caspier-border flex items-center justify-center">
                             <EyeIcon className="w-4 h-4 text-labstx-orange" />
                         </div>
                         <div>
@@ -443,7 +451,7 @@ const AbiPreviewTab: React.FC<AbiPreviewTabProps> = ({ code, fileName, theme }) 
                         </button>
                         <button
                             onClick={downloadAbi}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-labstx-orange/10 border border-labstx-orange/30 text-labstx-orange hover:bg-labstx-orange/20 transition-all"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-labstx-orange/10 border border-caspier-border text-labstx-orange hover:bg-labstx-orange/20 transition-all"
                             title="Download ABI JSON"
                         >
                             <DownloadIcon className="w-3.5 h-3.5" />
@@ -489,7 +497,7 @@ const AbiPreviewTab: React.FC<AbiPreviewTabProps> = ({ code, fileName, theme }) 
                                 className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg border transition-all uppercase tracking-wider
                                     ${activeFilter === f
                                         ? 'bg-labstx-orange text-caspier-black border-labstx-orange'
-                                        : 'border-caspier-border text-caspier-muted hover:border-labstx-orange/50 hover:text-caspier-text'
+                                        : 'border-caspier-border text-caspier-muted hover:border-caspier-border hover:text-caspier-text'
                                     }`}
                             >
                                 {f}

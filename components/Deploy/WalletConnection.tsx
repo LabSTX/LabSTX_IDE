@@ -89,7 +89,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-widest text-caspier-muted font-medium">Network</p>
               <span className="text-xs font-bold text-caspier-text uppercase">
-                {wallet.address?.startsWith('ST') ? 'testnet' : 'mainnet'}
+                {network}
               </span>
             </div>
           </div>

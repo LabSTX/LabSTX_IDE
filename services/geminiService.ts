@@ -1,95 +1,118 @@
-
-import { GoogleGenAI } from "@google/genai";
-
-export const generateChatResponse = async (
+export const generateGeminiResponse = async (
   message: string,
   contextCode: string,
-  history: { role: 'user' | 'model'; parts: { text: string }[] }[]
+  history: { role: "user" | "model"; parts: { text: string }[] }[],
+  config: { apiKey: string; model: string },
+  wallet?: string
 ): Promise<string> => {
-  if (!process.env.API_KEY) {
-    return "Error: API Key is missing. Please check your environment configuration.";
+  if (!config.apiKey) {
+    return "Error: Gemini API Key is missing. Please add it in PROJECT SETTINGS.";
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Determine backend URL (matches logic in App.tsx)
+    const backendUrl = window.location.hostname === 'localhost'
+        ? 'http://localhost:5001'
+        : window.location.origin.replace('3000', '5001');
 
-    // Coding tasks should use gemini-3-pro-preview
-    const model = 'gemini-3-pro-preview';
-
-    const systemInstruction = `You are LabSTX AI, an intelligent coding assistant embedded in a Casper Network IDE. 
-    You are an expert in Rust (no_std), WebAssembly (WASM), Casper Smart Contracts, and the casper-js-sdk.
-    Your personality is helpful, concise, and technical.
-
-    CRITICAL CASPER 2.0 COMPILATION KNOWLEDGE (SDK 5.0/6.0):
-    1. HOST ENVIRONMENT: Rust 'nightly-2025-01-01' with 'wasm32-unknown-unknown'.
-    2. CARGO.TOML DEPS:
-       - casper-contract = "5.0"
-       - casper-types = "6.0"
-       - NO 'wee_alloc' dependency (it is built-in now).
-    3. NO_STD BOILERPLATE: 
-       - Contracts MUST start with '#![no_std]' and '#![no_main]'.
-       - DO NOT include #[panic_handler] or #[global_allocator] (casper-contract 5.0 provides them).
-    4. IMPORT PATHS (Casper Types 6.0):
-       - contracts::* : EntryPoint, EntryPoints, NamedKeys, ContractPackageHash
-       - Root level: EntryPointAccess, EntryPointType, Parameter, CLType, Key, URef
-    5. TYPE CHANGES:
-       - EntryPointType::Called (formerly 'Contract')
-       - Key::into_hash_addr() (formerly 'into_hash')
-    6. CONTRACT DEFINITION API (Casper Contract 5.0):
-       - storage::new_contract() takes 5 arguments (added message_topics as 5th arg).
-       - storage::add_contract_version() takes 4 arguments (added message_topics as 4th arg).
-       - REQUIRES .into() conversion for entry_points and named_keys arguments.
-       Example:
-       \`\`\`rust
-       storage::new_contract(
-           entry_points.into(),
-           Some(named_keys.into()),
-           Some(String::from("package_name")),
-           Some(String::from("access_uref")),
-           None // message_topics
-       );
-       \`\`\`
-
-IDE & DEPLOYMENT CONTEXT:
-1. COMPILATION:
-   - Performed on remote GCP VM via 'casper-compiler-service'.
-   - Optimization: 'codegen-units=1', 'lto=true', 'opt-level="z"', plus 'wasm-opt -Oz'.
-   - Result: Highly optimized WASM binaries.
-2. UPGRADE ARCHITECTURE (CasperIDE Standard):
-   - V1 (Fresh): MUST use 'storage::create_contract_package_at_hash()'.
-   - V1 (Fresh): MUST save 'package_hash' and 'access_uref' to Account Named Keys (Critical for upgrades).
-   - V2+ (Upgrade): MUST use 'storage::add_contract_version()'.
-   - V2+ (Upgrade): Requires existing 'package_hash' and 'access_uref'.
-3. STATE MANAGEMENT:
-   - Use Named Keys for state storage (UREFs).
-   - Named Keys persist across upgrades automatically.
-
-    When answering questions, prioritize these rules over any deprecated knowledge you may have.
-    If asked to generate code, provide it in clean markdown blocks conforming strictly to the rules above.
-    
-    Current Code Context:
-    \`\`\`
-    ${contextCode}
-    \`\`\`
-    
-    When answering questions, prioritize the context of the code provided above if relevant.
-    If the user mentions a specific file (e.g., @main.rs), use the provided context for that file.
-    If asked to find errors, check the provided code carefully for logical and syntax errors (specifically Rust borrowing/ownership).
-    If the user asks to generate code, provide it in clean markdown blocks conforming to the CRITICAL COMPILATION RULES above.
-    Do not use unnecessary conversational filler. Be direct and efficient like a senior engineer.`;
-
-    const chat = ai.chats.create({
-      model: model,
-      config: {
-        systemInstruction: systemInstruction,
+    const response = await fetch(`${backendUrl}/ide-api/ai/gemini`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
-      history: history
+      body: JSON.stringify({
+        message,
+        contextCode,
+        history,
+        config,
+        wallet
+      })
     });
 
-    const result = await chat.sendMessage({ message });
-    return result.text || "No response generated.";
-  } catch (error) {
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Backend proxy error');
+    }
+
+    const data = await response.json();
+    return data.text || "No response generated.";
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return "I encountered an error processing your request. Please try again.";
+    return `Gemini Error: ${error.message || "I encountered an error processing your request."}`;
+  }
+};
+
+export const streamGeminiResponse = async (
+  message: string,
+  contextCode: string,
+  history: { role: "user" | "model"; parts: { text: string }[] }[],
+  config: { apiKey: string; model: string },
+  onChunk: (text: string) => void,
+  wallet?: string
+): Promise<void> => {
+  if (!config.apiKey) {
+    onChunk("Error: Gemini API Key is missing. Please add it in PROJECT SETTINGS.");
+    return;
+  }
+
+  try {
+    const backendUrl = window.location.hostname === 'localhost'
+        ? 'http://localhost:5001'
+        : window.location.origin.replace('3000', '5001');
+
+    const response = await fetch(`${backendUrl}/ide-api/ai/gemini/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message,
+        contextCode,
+        history,
+        config
+      })
+    });
+
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Backend proxy error');
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Response body is null");
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') continue;
+          
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.error) {
+              onChunk(`\nError: ${data.error}`);
+            } else if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+              onChunk(data.candidates[0].content.parts[0].text);
+            }
+          } catch (e) {
+            // Partial JSON or other format - ignore for now as Gemini/SSE can be complex
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error("Gemini Streaming Error:", error);
+    onChunk(`\nGemini Error: ${error.message || "I encountered an error processing your request."}`);
   }
 };

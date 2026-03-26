@@ -1,6 +1,15 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import { ProjectSettings } from '../../types';
+
+// --- Helper: Standard debounce hook ---
+function useDebounce<T extends (...args: any[]) => void>(callback: T, delay: number) {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  return useCallback((...args: Parameters<T>) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => callback(...args), delay);
+  }, [callback, delay]);
+}
 
 interface CodeEditorProps {
   code: string;
@@ -9,104 +18,118 @@ interface CodeEditorProps {
   readOnly?: boolean;
   settings: ProjectSettings;
   theme: 'dark' | 'light';
-  action?: { type: 'save' | 'gotoLine' | null, timestamp: number, line?: number, column?: number };
+  action?: { type: 'save' | 'gotoLine' | 'updateContent' | null, timestamp: number, line?: number, column?: number, content?: string };
   onSave?: () => void;
-  /** When set, opens Monaco's find widget and highlights all matches */
   findQuery?: string;
   lineEnding?: 'LF' | 'CRLF';
   onCursorChange?: (position: { lineNumber: number, column: number }) => void;
   onActionComplete?: () => void;
   activeFileId?: string | null;
+  onFileDrop?: (files: FileList) => void;
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
   code, language, onChange,
   readOnly = false, settings, theme,
   action, onSave, findQuery, lineEnding = 'LF',
-  onCursorChange, onActionComplete, activeFileId
+  onCursorChange, onActionComplete, activeFileId, onFileDrop
 }) => {
   const monaco = useMonaco();
-  const [editor, setEditor] = React.useState<any>(null);
-  const lastActionTimestampRef = React.useRef<number>(0);
-  const lastLineEndingRef = React.useRef<string>(''); // Start empty to force sync
-  const lastActiveFileIdRef = React.useRef<string | null>(null);
 
-  // Robust value synchronization: Only update Monaco if the prop 'code' 
-  // actually differs from the current editor content (ignoring EOL differences).
-  React.useEffect(() => {
-    if (!editor) return;
-    const model = editor.getModel();
-    if (!model) return;
+  // Using a Ref instead of State for the editor instance prevents unnecessary re-renders
+  const editorRef = useRef<any>(null);
+  const lastActionTimestampRef = useRef<number>(0);
+  const lastLineEndingRef = useRef<string>('');
 
-    const normalize = (s: string) => s ? s.replace(/\r\n/g, '\n') : '';
-    const currentCode = model.getValue();
+  // ==========================================
+  // 1. STATE SYNCHRONIZATION (Performance Optimized)
+  // ==========================================
 
-    // Only apply if there's a real content change from outside (e.g. Undo/Redo/Switch/Remount)
-    if (normalize(currentCode) !== normalize(code)) {
-      const range = model.getFullModelRange();
-      editor.executeEdits('remote-sync', [{ range, text: code }]);
-    }
-  }, [editor, code, activeFileId]); // Handle content, file, AND mount/instance changes
+  // Wait 300ms after they stop typing before sending the state up to React
+  const debouncedOnChange = useDebounce((val: string) => {
+    onChange(val);
+  }, 300);
 
-  // Handle external actions (Save, GotoLine)
+  // External Sync: Handle file switching or external code updates
   useEffect(() => {
-    if (!editor || !action || !action.type || action.timestamp <= lastActionTimestampRef.current) return;
+    if (!editorRef.current) return;
+
+    // If the editor has focus, the user is actively typing. Do not overwrite them!
+    if (editorRef.current.hasTextFocus()) return;
+
+    const currentModelValue = editorRef.current.getValue();
+
+    // Only update Monaco if the parent state is actually different (e.g., switched files)
+    if (currentModelValue !== code) {
+      editorRef.current.setValue(code || '');
+    }
+  }, [code, activeFileId]);
+
+  // ==========================================
+  // 2. EDITOR ACTIONS & COMMANDS
+  // ==========================================
+
+  // Handle external actions (Save, GotoLine, UpdateContent)
+  useEffect(() => {
+    if (!editorRef.current || !action || !action.type || action.timestamp <= lastActionTimestampRef.current) return;
 
     lastActionTimestampRef.current = action.timestamp;
 
     if (action.type === 'save') {
+      // Force an immediate flush of the value before saving to ensure latest code is caught
+      onChange(editorRef.current.getValue());
       onSave?.();
     } else if (action.type === 'gotoLine' && action.line) {
       const line = action.line;
       const column = action.column ?? 1;
-      editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column });
-      editor.focus();
+      editorRef.current.revealLineInCenter(line);
+      editorRef.current.setPosition({ lineNumber: line, column });
+      editorRef.current.focus();
+    } else if (action.type === 'updateContent' && action.content !== undefined) {
+      editorRef.current.setValue(action.content);
     }
 
-    // Notify parent that action is processed so it can be cleared
     onActionComplete?.();
-  }, [editor, action, onSave, onActionComplete]);
+  }, [action, onSave, onActionComplete, onChange]);
 
-  // Handle find-in-code: open Monaco's find widget and set search string
+
+  // Handle find-in-code widget
   useEffect(() => {
-    if (!editor) return;
-    if (findQuery === undefined) return;
+    if (!editorRef.current || findQuery === undefined) return;
     if (findQuery === '') {
-      // Close find widget when query is cleared
-      editor.trigger('searchBox', 'closeFindWidget', null);
+      editorRef.current.trigger('searchBox', 'closeFindWidget', null);
       return;
     }
     try {
-      // Open the find widget
-      editor.trigger('searchBox', 'actions.find', null);
-      // Access the find controller contribution to set the search string
-      const findController = editor.getContribution('editor.contrib.findController') as any;
-      if (findController) {
-        findController.setSearchString(findQuery);
-      }
+      editorRef.current.trigger('searchBox', 'actions.find', null);
+      const findController = editorRef.current.getContribution('editor.contrib.findController') as any;
+      if (findController) findController.setSearchString(findQuery);
     } catch (e) {
       console.warn('Find widget error:', e);
     }
-  }, [editor, findQuery]);
+  }, [findQuery]);
 
   // Handle line endings (LF/CRLF) 
-  // Optimized to only run when lineEnding prop actually changes from user intent
   useEffect(() => {
-    if (!editor || !monaco) return;
-    const model = editor.getModel();
+    if (!editorRef.current || !monaco) return;
+    const model = editorRef.current.getModel();
     if (!model) return;
 
     const eol = lineEnding === 'CRLF'
       ? monaco.editor.EndOfLineSequence.CRLF
       : monaco.editor.EndOfLineSequence.LF;
 
-    // Detect if we actually need a manual EOL swap
     if (model.getEndOfLineSequence() !== eol) {
       model.setEOL(eol);
       lastLineEndingRef.current = lineEnding;
+      // Notify parent immediately of the EOL change as it affects the content string
+      onChange(model.getValue());
     }
-  }, [editor, lineEnding, monaco, activeFileId]); // Re-sync when lineEnding OR file changes
+  }, [lineEnding, monaco, activeFileId]);
+
+  // ==========================================
+  // 3. MONACO SETUP (Languages & Themes)
+  // ==========================================
 
   useEffect(() => {
     if (monaco) {
@@ -114,6 +137,32 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
       monaco.languages.register({ id: 'rust' });
       monaco.languages.register({ id: 'typescript' });
       monaco.languages.register({ id: 'toml' });
+
+      // Configure TypeScript provider to ignore module-not-found errors (useful for WebContainers)
+      // This hides the red squiggly lines for imports that Monaco can't resolve locally
+      monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: false,
+        noSyntaxValidation: false,
+        diagnosticCodesToIgnore: [2307, 2305, 7016, 2792],
+      });
+
+      monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: true,
+        noSyntaxValidation: false,
+        diagnosticCodesToIgnore: [2307, 2305, 7016, 2792],
+      });
+
+      monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+        target: monaco.languages.typescript.ScriptTarget.ESNext,
+        allowNonTsExtensions: true,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        noEmit: true,
+        esModuleInterop: true,
+        jsx: monaco.languages.typescript.JsxEmit.React,
+        allowJs: true,
+        typeRoots: ["node_modules/@types"]
+      });
 
       // Register Clarity
       monaco.languages.register({ id: 'clarity' });
@@ -144,18 +193,18 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
         inherit: true,
         rules: [
           { token: 'comment', foreground: '608b4e' },
-          { token: 'keyword', foreground: 'ff2d2e', fontStyle: 'bold' },
+          { token: 'keyword', foreground: '007bff', fontStyle: 'bold' },
           { token: 'string', foreground: 'ce9178' },
           { token: 'number', foreground: 'b5cea8' },
         ],
         colors: {
           'editor.background': '#0a0a0a',
           'editor.foreground': '#e0e0e0',
-          'editorCursor.foreground': '#ff2d2e',
+          'editorCursor.foreground': '#007bff',
           'editor.lineHighlightBackground': '#111111',
           'editorLineNumber.foreground': '#444444',
-          'editorLineNumber.activeForeground': '#ff2d2e',
-          'editor.selectionBackground': '#ff2d2e33',
+          'editorLineNumber.activeForeground': '#007bff',
+          'editor.selectionBackground': '#007bff33',
         }
       });
 
@@ -165,18 +214,18 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
         inherit: true,
         rules: [
           { token: 'comment', foreground: '008000' },
-          { token: 'keyword', foreground: 'd00000', fontStyle: 'bold' },
+          { token: 'keyword', foreground: '007bff', fontStyle: 'bold' },
           { token: 'string', foreground: 'a31515' },
           { token: 'number', foreground: '098658' },
         ],
         colors: {
-          'editor.background': '#f9fafb', // gray-50
-          'editor.foreground': '#111827', // gray-900
-          'editorCursor.foreground': '#ff2d2e',
-          'editor.lineHighlightBackground': '#f3f4f6', // gray-100
-          'editorLineNumber.foreground': '#9ca3af', // gray-400
-          'editorLineNumber.activeForeground': '#ff2d2e',
-          'editor.selectionBackground': '#ff2d2e1a',
+          'editor.background': '#ffffff',
+          'editor.foreground': '#1a1a1a',
+          'editorCursor.foreground': '#007bff',
+          'editor.lineHighlightBackground': '#f9f9f9',
+          'editorLineNumber.foreground': '#9ca3af',
+          'editorLineNumber.activeForeground': '#007bff',
+          'editor.selectionBackground': '#007bff1a',
         }
       });
     }
@@ -190,10 +239,8 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
   }, [monaco, theme]);
 
   const mapLanguage = (lang: string) => {
-    // Casper contract languages
     if (lang === 'rust' || lang === 'rs') return 'rust';
     if (lang === 'typescript' || lang === 'ts' || lang === 'assemblyscript' || lang === 'as') return 'typescript';
-    // Other languages
     if (lang === 'clarity' || lang === 'clar') return 'clarity';
     if (lang === 'sol' || lang === 'solidity') return 'sol';
     if (lang === 'js' || lang === 'javascript') return 'javascript';
@@ -206,33 +253,56 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
   };
 
   return (
-    <div className="w-full h-full overflow-hidden">
+    <div
+      className="w-full h-full overflow-hidden relative"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.files.length > 0) {
+          onFileDrop?.(e.dataTransfer.files);
+        }
+      }}
+    >
       <Editor
         height="100%"
+        theme={theme === 'dark' ? 'caspier-dark' : 'caspier-light'}
         language={mapLanguage(language)}
-        /* 
-           Uncontrolled mode: We don't pass 'value' here to prevent the library 
-           from triggering 'setValue' on every render. Our useEffect above 
-           handles manual synchronization only when values actually differ.
-        */
         path={activeFileId || 'default'}
-        onChange={onChange}
-        onMount={(e) => {
-          setEditor(e);
 
-          // Listen for cursor position changes
-          e.onDidChangeCursorPosition((ev: any) => {
-            const pos = {
-              lineNumber: ev.position.lineNumber,
-              column: ev.position.column
-            };
+        // UNCONTROLLED MODE: Pass initial value, but let Monaco handle internal typing state
+        defaultValue={code}
 
-            // Update App level state (for status bar)
-            onCursorChange?.(pos);
+        onChange={(value) => {
+          if (value !== undefined) {
+            debouncedOnChange(value);
+          }
+        }}
+
+        onMount={(editor) => {
+          editorRef.current = editor;
+
+          // Immediate Sync on Blur: If the user clicks away, flush state instantly
+          editor.onDidBlurEditorText(() => {
+            onChange(editor.getValue());
+          });
+
+          // Debounced Cursor Position: Prevents spamming parent component with state updates
+          let cursorTimeout: ReturnType<typeof setTimeout>;
+          editor.onDidChangeCursorPosition((ev: any) => {
+            clearTimeout(cursorTimeout);
+            cursorTimeout = setTimeout(() => {
+              onCursorChange?.({
+                lineNumber: ev.position.lineNumber,
+                column: ev.position.column
+              });
+            }, 100);
           });
         }}
-        // Initial theme logic is handled by the useEffect above
-        theme={theme === 'dark' ? 'caspier-dark' : 'caspier-light'}
+
         options={React.useMemo(() => ({
           readOnly,
           minimap: { enabled: settings.minimap },
@@ -246,7 +316,7 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
           cursorBlinking: 'smooth',
           cursorSmoothCaretAnimation: 'on',
           renderLineHighlight: 'line',
-        }), [readOnly, settings, theme])}
+        }), [readOnly, settings])}
       />
     </div>
   );

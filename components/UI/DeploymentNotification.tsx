@@ -55,7 +55,7 @@ export const DeploymentNotification: React.FC<DeploymentNotificationProps> = ({
         }
       `}</style>
       <div
-        className="fixed bottom-6 right-6 z-[9999] bg-caspier-dark border border-labstx-orange/30 rounded-lg shadow-[0_10px_40px_-10px_rgba(255,107,0,0.2)] p-4 min-w-[340px] max-w-[420px] cursor-pointer hover:border-labstx-orange transition-all duration-300 notification-enter overflow-hidden"
+        className="fixed bottom-6 right-6 z-[9999] bg-caspier-dark border border-caspier-border rounded-lg shadow-[0_10px_40px_-10px_rgba(255,107,0,0.2)] p-4 min-w-[340px] max-w-[420px] cursor-pointer hover:border-labstx-orange transition-all duration-300 notification-enter overflow-hidden"
         onClick={handleClick}
       >
         {/* Progress bar background */}

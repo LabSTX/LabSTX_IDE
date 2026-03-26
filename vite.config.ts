@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
@@ -10,6 +11,10 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      headers: {
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+      },
       proxy: {
         '/ide-api/clarity': {
           target: env.VITE_BACKEND_URL,
@@ -32,6 +37,16 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
         '/ide-api/git': {
+          target: env.VITE_BACKEND_URL,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/ide-api/ai': {
+          target: env.VITE_BACKEND_URL,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/ide-api/stats': {
           target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
@@ -63,6 +78,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      tailwindcss(),
       wasm(),
       topLevelAwait()
     ],

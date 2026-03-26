@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { PlusIcon, GridIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, DownloadIcon, EditIcon, UploadIcon, GithubIcon, BugIcon, RefreshIcon } from '../UI/Icons';
+import { BugIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon } from '../UI/Icons';
+import WorkspaceSelector from './WorkspaceSelector';
 import { GitHubAuth } from '../GitHub/GitHubAuth';
 import { PublicCloneModal } from '../GitHub/PublicCloneModal';
 import { BugReportModal } from '../UI/BugReportModal';
@@ -13,6 +14,8 @@ interface HeaderProps {
   onRenameWorkspace: () => void;
   onDownloadWorkspace: () => void;
   onImportWorkspace: () => void;
+  onDeleteWorkspace?: () => void;
+  onCloneWorkspace?: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
   isLeftSidebarVisible: boolean;
@@ -25,6 +28,8 @@ interface HeaderProps {
   onGitHubGistCreated?: (url: string) => void;
   workspaceFiles?: Record<string, string>;
   onSync?: () => void;
+  aiStats: { aiInteractions: number; aiQuotaLimit: number } | null;
+  onOpenAccountSettings: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -35,6 +40,8 @@ const Header: React.FC<HeaderProps> = ({
   onRenameWorkspace,
   onDownloadWorkspace,
   onImportWorkspace,
+  onDeleteWorkspace,
+  onCloneWorkspace,
   theme,
   toggleTheme,
   isLeftSidebarVisible,
@@ -46,9 +53,13 @@ const Header: React.FC<HeaderProps> = ({
   onGitHubClone,
   onGitHubGistCreated,
   workspaceFiles,
-  onSync
+  onSync,
+  aiStats,
+  onOpenAccountSettings
 }) => {
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+
+  const aiUsedPercent = aiStats ? Math.min(100, Math.round((aiStats.aiInteractions / aiStats.aiQuotaLimit) * 100)) : 0;
 
   return (
     <div className="h-12 bg-caspier-black border-b border-caspier-border flex items-center px-4 justify-between shrink-0 select-none">
@@ -77,94 +88,37 @@ const Header: React.FC<HeaderProps> = ({
         {/* Separator */}
         <div className="h-4 w-[1px] bg-caspier-border"></div>
 
-        {/* Workspace Selector */}
-        <div id="workspace-selector" className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-caspier-dark border border-caspier-border px-3 py-1.5 rounded-sm hover:border-caspier-muted transition-colors relative group">
-            <GridIcon className="w-4 h-4 text-caspier-red" />
-            <span className="text-xs text-caspier-muted font-bold uppercase tracking-wide">Workspace:</span>
-            <div className="relative">
-              <select
-                value={currentWorkspace}
-                onChange={(e) => onSwitchWorkspace(e.target.value)}
-                className="appearance-none bg-transparent text-sm text-caspier-text outline-none cursor-pointer pr-4 font-medium"
-              >
-                {workspaces.map(w => <option key={w} value={w} className="bg-caspier-black text-caspier-text">{w}</option>)}
-              </select>
-            </div>
-            <button
-              onClick={onRenameWorkspace}
-              className="ml-1 p-0.5 text-caspier-muted hover:text-caspier-text opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Rename Workspace"
-            >
-              <EditIcon className="w-3 h-3" />
-            </button>
-          </div>
-
-          {/* Add Workspace */}
-          <button
-            onClick={onCreateWorkspace}
-            className="bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-caspier-red hover:border-caspier-red transition-all p-1.5 rounded-sm active:translate-y-[1px]"
-            title="Create New Workspace"
-          >
-            <PlusIcon className="w-4 h-4" />
-          </button>
-
-          {/* Import Workspace */}
-          <button
-            onClick={onImportWorkspace}
-            className="bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-caspier-red hover:border-caspier-red transition-all p-1.5 rounded-sm active:translate-y-[1px]"
-            title="Import Workspace"
-          >
-            <UploadIcon className="w-4 h-4" />
-          </button>
-
-          {/* Download Workspace */}
-          <button
-            onClick={onDownloadWorkspace}
-            className="bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-caspier-red hover:border-caspier-red transition-all p-1.5 rounded-sm active:translate-y-[1px]"
-            title="Download Workspace"
-          >
-            <DownloadIcon className="w-4 h-4" />
-          </button>
-
-          {/* Clone Repository */}
-          <button
-            onClick={() => {
-              const modal = document.getElementById('public-clone-modal');
-              if (modal) modal.style.display = 'flex';
-            }}
-            className="group relative bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-labstx-orange hover:border-labstx-orange transition-all p-1.5 rounded-sm active:translate-y-[1px] ml-1 shadow-sm"
-            title="Clone GitHub Repository"
-          >
-            <div className="absolute inset-0 bg-labstx-orange/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm" />
-            <GithubIcon className="w-4 h-4 relative z-10" />
-          </button>
-
-          {/* Sync Workspace (Server to IDE) */}
-          <button
-            onClick={onSync}
-            className="group relative bg-caspier-dark border border-caspier-border text-caspier-muted hover:text-emerald-500 hover:border-emerald-500 transition-all p-1.5 rounded-sm active:translate-y-[1px] ml-1 shadow-sm"
-            title="Sync from Server (Pull latest changes)"
-          >
-            <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm" />
-            <RefreshIcon className="w-4 h-4 relative z-10" />
-          </button>
-
-        </div>
+        <WorkspaceSelector
+          currentWorkspace={currentWorkspace}
+          workspaces={workspaces}
+          onSwitchWorkspace={onSwitchWorkspace}
+          onCreateWorkspace={onCreateWorkspace}
+          onRenameWorkspace={onRenameWorkspace}
+          onDownloadWorkspace={onDownloadWorkspace}
+          onImportWorkspace={onImportWorkspace}
+          onDeleteWorkspace={onDeleteWorkspace}
+          onCloneWorkspace={onCloneWorkspace}
+          onSync={onSync}
+        />
       </div>
 
-      <div className="flex items-center gap-3">
-        <p className='flex items-center gap-x-1 text-emerald-600 border border-emerald-600 rounded-full px-2 py-1 text-xs font-bold'>
-          <BugIcon className='w-4 h-4' /> BETA
-        </p>
-        <button
-          onClick={() => setIsBugModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 rounded transition-all duration-200 group"
-          title="Report a bug or share feedback"
-        >
-          <BugIcon className="w-3 h-3 text-red-500 group-hover:animate-pulse" />
-          Report Bug
-        </button>
+      <div className="flex items-center gap-4">
+        {/* AI Credits Display */}
+
+        <div className="flex items-center gap-2">
+          <div className='flex items-center gap-x-1.5 text-emerald-500 bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-2 py-1 text-[10px] font-black tracking-widest uppercase'>
+            <div className="w-1 h-1 rounded-full bg-emerald-500" />
+            BETA
+          </div>
+          <button
+            onClick={() => setIsBugModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 rounded transition-all duration-200 group"
+            title="Report a bug or share feedback"
+          >
+            <BugIcon className="w-3 h-3 text-red-500 group-hover:animate-pulse" />
+            Report Bug
+          </button>
+        </div>
       </div>
 
       {/* Right Side Controls */}
@@ -202,13 +156,30 @@ const Header: React.FC<HeaderProps> = ({
         >
           {theme === 'dark' ? <SunIcon className="w-4 h-4" /> : <MoonIcon className="w-4 h-4" />}
         </button>
+        {aiStats && (
+          <div
+            className="hidden lg:flex flex-col items-end gap-1  border-l px-4 border-r border-caspier-border cursor-pointer"
+            onClick={onOpenAccountSettings}
+          >
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${aiUsedPercent > 80 ? 'bg-red-500' : 'bg-indigo-500'} animate-pulse`} />
+                <span className="text-[9px] font-black text-caspier-muted uppercase tracking-tighter">AI Credits</span>
+              </div>
+              <span className="text-[10px] font-bold text-caspier-text font-mono">
+                {aiStats.aiInteractions.toLocaleString()} / {aiStats.aiQuotaLimit.toLocaleString()}
+              </span>
+            </div>
+            <div className="w-24 h-1 bg-caspier-black/50 rounded-full overflow-hidden border border-white/5">
+              <div
+                className={`h-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(99,102,241,0.4)] ${aiUsedPercent > 80 ? 'bg-red-500' : 'bg-indigo-600'}`}
+                style={{ width: `${aiUsedPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
 
-        {/* GitHub Auth */}
-        <GitHubAuth
-          onClone={onGitHubClone}
-          onGistCreated={onGitHubGistCreated}
-          workspaceFiles={workspaceFiles}
-        />
+
       </div>
 
       <PublicCloneModal onClone={onGitHubClone || (() => { })} />

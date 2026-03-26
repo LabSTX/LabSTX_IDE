@@ -86,7 +86,7 @@ const StateInspector: React.FC<StateInspectorProps> = ({ contractCode, contractN
                 ) : (
                     <div className="space-y-2">
                         {assets.map((sv, idx) => (
-                            <div key={idx} className="bg-caspier-panel/40 border border-caspier-border p-3 rounded-xl group hover:border-labstx-orange/50 transition-all">
+                            <div key={idx} className="bg-caspier-panel/40 border border-caspier-border p-3 rounded-xl group hover:border-caspier-border transition-all">
                                 <div className="flex justify-between items-center mb-1.5">
                                     <span className="text-[11px] font-bold text-indigo-300">{sv.name}</span>
                                     <span className="text-[8px] bg-caspier-black px-1.5 py-0.5 rounded text-caspier-muted border border-caspier-border uppercase font-black">STX</span>

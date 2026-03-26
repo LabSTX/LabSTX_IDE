@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { GithubIcon, RocketIcon, PlayIcon } from '../UI/Icons';
+import { GitHubIcon, RocketIcon, PlayIcon } from '../UI/Icons';
+
 import { Button } from '../UI/Button';
 
 interface PublicCloneModalProps {
@@ -90,7 +91,8 @@ export const PublicCloneModal: React.FC<PublicCloneModalProps> = ({ onClone }) =
                 <div className="p-6 bg-gradient-to-br from-caspier-black to-caspier-dark border-b border-caspier-border">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-labstx-orange/10 rounded-lg">
-                            <GithubIcon className="w-6 h-6 text-labstx-orange" />
+                            <GitHubIcon className="w-6 h-6 text-labstx-orange" />
+
                         </div>
                         <div>
                             <h3 className="text-lg font-black tracking-tight">Clone Repository</h3>

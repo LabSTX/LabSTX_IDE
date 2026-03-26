@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileNode } from '../../types';
-import { SmartFileIcon, XIcon, HomeIcon, EyeIcon } from '../UI/Icons';
+import { SmartFileIcon, XIcon, HomeIcon, EyeIcon, UserIcon } from '../UI/Icons';
 
 interface EditorTabsProps {
   files: FileNode[];
@@ -41,6 +41,13 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   const findFileDetails = (nodes: FileNode[], id: string): { name: string, type: string, isAbi?: boolean, isMd?: boolean, srcName?: string } | null => {
     if (id === '@home') return { name: 'Home', type: 'file' };
     if (id === '@changelog') return { name: 'Changelog', type: 'file', isMd: true, srcName: 'CHANGELOG.md' };
+    if (id === '@stxer-debugger') return { name: 'Stxer debugger', type: 'file' };
+    if (id === '@account') return { name: 'Account Settings', type: 'file' };
+
+    // ── Contract Activity Detial tabs (@contract-{id})
+    if (id.startsWith('@contract-')) {
+      return { name: 'Contract Detail', type: 'file' };
+    }
 
     // ── ABI preview virtual tabs (@abi-{fileId})
     if (id.startsWith('@abi-')) {
@@ -81,6 +88,10 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   };
 
   // Inline markdown icon (no extra import needed)
+  const StacksIcon = ({ className }: { className?: string }) => (
+    <img src="/stxer.svg" alt="Stacks" className={className} />
+  );
+
   const MdIcon = ({ className }: { className?: string }) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <rect x="2" y="4" width="20" height="16" rx="2" />
@@ -129,6 +140,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
         const isActive = id === activeFileId;
         const isModified = modifiedFileIds.includes(id);
         const isDirty = dirtyFileIds.includes(id);
+        const isSpecialId = id.startsWith('@');
 
         return (
           <div
@@ -140,18 +152,26 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
             onClick={() => onSelect(id)}
             onContextMenu={(e) => handleContextMenu(e, id)}
             className={`
-              group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer min-w-[120px] max-w-[200px] border-r border-caspier-border transition-all relative
+              group flex items-center gap-2 px-3 py-1.5 text-[11px] cursor-pointer min-w-[110px] max-w-[180px] border-r border-caspier-border transition-all relative
               ${isActive
-                ? file.isMd
+                ? isSpecialId
                   ? 'bg-caspier-dark text-caspier-text border-t-2 border-t-blue-400'
-                  : 'bg-caspier-dark text-caspier-text border-t-2 border-t-labstx-orange'
-                : 'bg-caspier-black text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover border-t-2 border-t-transparent'
+                  : file.isMd
+                    ? 'bg-caspier-dark text-caspier-text border-t-2 border-t-blue-400'
+                    : 'bg-caspier-dark text-caspier-text border-t-2 border-t-labstx-orange'
+                : isSpecialId
+                  ? 'bg-caspier-black/80 text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover border-t-2 border-t-transparent'
+                  : 'bg-caspier-black text-caspier-muted hover:text-caspier-text hover:bg-caspier-hover border-t-2 border-t-transparent'
               }
               ${draggedId === id ? 'opacity-40 scale-95' : 'opacity-100'}
             `}
           >
             {id === '@home' ? (
               <HomeIcon className={`w-3.5 h-3.5 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
+            ) : id === '@stxer-debugger' ? (
+              <StacksIcon className={`w-3.5 h-3.5 ${isActive ? '' : 'opacity-70 grayscale'}`} />
+            ) : id === '@account' ? (
+              <UserIcon className={`w-3.5 h-3.5 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
             ) : file.isAbi ? (
               <EyeIcon className={`w-3 h-3 flex-shrink-0 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
             ) : file.isMd ? (
@@ -163,7 +183,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
             <span className={`truncate flex-1 ${isModified || isDirty ? 'font-medium italic text-caspier-text/80' : ''}`}>
               {file.isAbi ? (
                 <span className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-labstx-orange/70 bg-labstx-orange/10 border border-labstx-orange/20 px-1 rounded">ABI</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-labstx-orange/70 bg-labstx-orange/10 border border-caspier-border px-1 rounded">ABI</span>
                   <span className="truncate">{file.srcName}</span>
                 </span>
               ) : file.isMd ? (

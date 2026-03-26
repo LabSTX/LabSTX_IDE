@@ -1,0 +1,94 @@
+@import "tailwindcss";
+@config "./tailwind.config.js";
+
+:root {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #161616;
+  --bg-hover: #1c1c1c;
+  --text-primary: #e0e0e0;
+  --text-secondary: #9ca3af;
+  --border-color: #262626;
+  --stx-orange: #007bff; /* Changed to Blue */
+  --stx-purple: #5546ff;
+  --red-dim: rgba(0, 123, 255, 0.1); /* Changed to Blue Dim */
+}
+
+[data-theme='light'] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9f9f9;
+  --bg-tertiary: #f0f0f0;
+  --bg-hover: #e5e5e5;
+  --text-primary: #1a1a1a;
+  --text-secondary: #4b5563;
+  --border-color: #e5e5e5;
+  --stx-orange: #007bff; /* Changed to Blue */
+  --stx-purple: #4c3ef0;
+  --red-dim: rgba(0, 123, 255, 0.05); /* Changed to Blue Dim */
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border: 2px solid var(--bg-primary);
+  border-radius: 4px; /* Slightly rounded for better look */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--stx-orange);
+}
+
+/* Xterm Scrollbar Styling */
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-color) !important;
+  border-radius: 4px !important;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--stx-orange) !important;
+}
+
+.custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--stx-orange);
+}

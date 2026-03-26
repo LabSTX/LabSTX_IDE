@@ -1,5 +1,5 @@
 export const helloWorldClarityExample = {
-    'contracts/hello-world.clar': `;; Hello World Contract
+  'contracts/hello-world.clar': `;; Hello World Contract
 ;; A simple contract that returns a greeting
 
 (define-read-only (say-hi)
@@ -8,7 +8,7 @@ export const helloWorldClarityExample = {
 (define-read-only (echo-number (val uint))
   (ok val))
 `,
-    'Clarinet.toml': `[project]
+  'Clarinet.toml': `[project]
 name = "hello-world"
 authors = []
 description = "A simple hello world on Stacks"
@@ -16,5 +16,6 @@ telemetry = false
 requirements = []
 [contracts.hello-world]
 path = "contracts/hello-world.clar"
-clarity_version = 2`
+clarity_version = 3
+epoch = 'latest'`
 };

@@ -37,10 +37,18 @@ export class StacksWalletService {
                     const mainnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.mainnet;
                     const testnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.testnet;
 
-                    // Final address to use for this connection
-                    const address = networkType === 'mainnet'
-                        ? (mainnetAddr || testnetAddr)
-                        : (testnetAddr || mainnetAddr);
+                    // Network Validation: Ensure the wallet provides the address for the requested network
+                    if (networkType === 'mainnet' && (!mainnetAddr || !mainnetAddr.startsWith('SP'))) {
+                        reject(new Error('Connection Failed: Mainnet address not found. Please switch your wallet to Mainnet.'));
+                        return;
+                    }
+                    if (networkType === 'testnet' && (!testnetAddr || !testnetAddr.startsWith('ST'))) {
+                        reject(new Error('Connection Failed: Testnet address not found. Please switch your wallet to Testnet.'));
+                        return;
+                    }
+
+                    // Final address to use for this connection (strict matching)
+                    const address = networkType === 'mainnet' ? mainnetAddr : testnetAddr;
 
                     resolve({
                         type,
@@ -126,11 +134,34 @@ export class StacksWalletService {
     }
 
     static async requestTestnetTokens(address: string): Promise<any> {
-        const response = await fetch('https://api.testnet.hiro.so/extended/v1/faucets/stx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address, stacking: false })
-        });
-        return await response.json();
+        try {
+            const response = await fetch('https://api.testnet.hiro.so/extended/v1/faucets/stx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address, stacking: false })
+            });
+            
+            const data = await response.json();
+            console.log(`[FaucetAPI] Status: ${response.status}`, data);
+            
+            if (!response.ok) {
+                return {
+                    success: false,
+                    reason: data.reason || data.message || `API Error ${response.status}`,
+                    details: data
+                };
+            }
+            
+            return {
+                success: true,
+                ...data
+            };
+        } catch (error: any) {
+            console.error('[FaucetAPI] Network Error:', error);
+            return {
+                success: false,
+                reason: error.message || 'Network connection failed'
+            };
+        }
     }
 }

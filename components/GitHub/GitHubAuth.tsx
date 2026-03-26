@@ -1,11 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-interface GitHubUser {
-    login: string;
-    avatar_url: string;
-    name: string | null;
-    id: number;
-}
+import { useGitHubAuth } from '../../contexts/GitHubAuthContext';
 
 interface GitHubAuthProps {
     onClone?: (files: Record<string, string>, repoName: string) => void;
@@ -18,16 +12,10 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
     onGistCreated,
     workspaceFiles = {}
 }) => {
-    const [user, setUser] = useState<GitHubUser | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { user, loading, login: handleLogin, logout: handleLogout } = useGitHubAuth();
     const [menuOpen, setMenuOpen] = useState(false);
     const [modalType, setModalType] = useState<'clone' | 'gist' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-
-    // Check authentication status on mount
-    useEffect(() => {
-        checkAuth();
-    }, []);
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -39,36 +27,6 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
-
-    const checkAuth = async () => {
-        try {
-            const response = await fetch('/ide-api/github/user');
-            if (!response.ok) return;
-
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                const data = await response.json();
-                if (data.authenticated) {
-                    setUser(data.user);
-                }
-            }
-        } catch (error) {
-            // Silently fail in dev if backend is missing
-            if (process.env.NODE_ENV === 'production') {
-                console.error('Auth check failed:', error);
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleLogin = () => {
-        window.location.href = '/ide-api/auth/github';
-    };
-
-    const handleLogout = () => {
-        window.location.href = '/ide-api/auth/logout';
-    };
 
     if (loading) {
         return (
@@ -89,6 +47,7 @@ export const GitHubAuth: React.FC<GitHubAuthProps> = ({
             </button>
         );
     }
+
 
     return (
         <div className="relative" ref={menuRef}>

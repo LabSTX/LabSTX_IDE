@@ -1,5 +1,0 @@
-components/Deploy/DeployPanel.tsx(619,13): error TS2322: Type '"testnet" | "mainnet" | "devnet" | "mocknet"' is not assignable to type '"testnet" | "mainnet" | "devnet"'.
-  Type '"mocknet"' is not assignable to type '"testnet" | "mainnet" | "devnet"'.
-components/Deploy/ExecutionPanel.tsx(44,52): error TS2339: Property 'executeEntryPoint' does not exist on type 'typeof CasperDeploymentService'.
-services/casper/wallet.ts(187,9): error TS2322: Type '"casper-signer"' is not assignable to type '"hiro" | "leather" | "xverse" | "casper-wallet" | "none"'.
-services/casper/wallet.ts(274,18): error TS2367: This comparison appears to be unintentional because the types '"hiro" | "leather" | "xverse" | "none"' and '"casper-signer"' have no overlap.

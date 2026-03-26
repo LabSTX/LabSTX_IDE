@@ -3,7 +3,7 @@ import { CompilationResult } from '../../types';
 import ClarityRepl from '../Debug/ClarityRepl';
 import StateInspector from '../Debug/StateInspector';
 import TraceViewer from '../Debug/TraceViewer';
-import { BugIcon, RefreshIcon } from '../UI/Icons';
+import { BugIcon, RefreshIcon, ChevronRightIcon } from '../UI/Icons';
 
 interface DebugPanelProps {
   compilationResult?: CompilationResult;
@@ -11,12 +11,10 @@ interface DebugPanelProps {
   contractName?: string;
   theme?: 'dark' | 'light';
   sessionId?: string;
+  onOpenStxerDebugger?: () => void;
 }
 
-type DebugTab = 'repl' | 'state' | 'trace';
-
-const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode, contractName, theme, sessionId }) => {
-  const [activeTab, setActiveTab] = useState<DebugTab>('repl');
+const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode, contractName, theme, sessionId, onOpenStxerDebugger }) => {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRefresh = () => {
@@ -45,35 +43,29 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ compilationResult, contractCode
         </button>
       </div>
 
-      {/* Tabs Layout */}
-      <div className="px-2 flex border-b border-caspier-border bg-caspier-dark/50 overflow-x-auto no-scrollbar">
-        {(['repl', 'state', 'trace'] as DebugTab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-[10px] font-bold transition-all relative flex flex-col items-center gap-1 group whitespace-nowrap ${activeTab === tab
-              ? 'text-labstx-orange'
-              : 'text-caspier-muted hover:text-caspier-text'
-              }`}
-          >
-            <span className="uppercase tracking-widest">{tab === 'repl' ? 'Console' : tab === 'state' ? 'Inspector' : 'Trace'}</span>
-            {activeTab === tab && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-labstx-orange animate-in slide-in-from-left duration-300" />
-            )}
-            <div className="absolute inset-0 bg-labstx-orange/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-md" />
-          </button>
-        ))}
-      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Stxer Debugger Card */}
+        <div
+          onClick={onOpenStxerDebugger}
+          className="group relative cursor-pointer active:scale-[0.98] transition-all"
+        >
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-labstx-orange to-orange-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+          <div className="relative flex items-center gap-4 p-4 bg-caspier-panel/50 border border-caspier-border rounded-2xl backdrop-blur-xl group-hover:border-caspier-border transition-all">
+            <div className="w-12 h-12 flex-shrink-0 bg-caspier-black rounded-xl border border-caspier-border flex items-center justify-center p-2 group-hover:scale-110 transition-transform duration-500">
+              <img src="/stxer.svg" alt="Stacks Logo" className="w-full h-full object-contain" />
+            </div>
 
-      <div className="flex-1 overflow-hidden relative">
-        <div key={refreshKey} className="h-full">
-          {activeTab === 'repl' && <ClarityRepl contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
-          {activeTab === 'state' && <StateInspector contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
-          {activeTab === 'trace' && <TraceViewer contractCode={contractCode} contractName={contractName} theme={theme} sessionId={sessionId} />}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold text-caspier-text mb-0.5">STXER debugger</h3>
+              <p className="text-[10px] text-caspier-muted font-medium uppercase tracking-wider">clarity smart contract debugger</p>
+            </div>
+
+            <ChevronRightIcon className="w-4 h-4 text-caspier-muted group-hover:text-labstx-orange group-hover:translate-x-1 transition-all" />
+          </div>
         </div>
 
         {!contractName && (
-          <div className="absolute inset-0 bg-caspier-black/80 backdrop-blur-[2px] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+          <div className="pt-8 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
             <div className="w-12 h-12 bg-caspier-panel border border-caspier-border rounded-2xl flex items-center justify-center mb-4 shadow-xl">
               <BugIcon className="w-6 h-6 text-caspier-muted opacity-30" />
             </div>

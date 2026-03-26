@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { FileNode, ActivityView, TerminalLine, ProjectSettings, GitState, GitCommit, Problem, WalletConnection, CompilationResult, DeployedContract } from './types';
+import { FileNode, ActivityView, TerminalLine, ProjectSettings, GitState, GitCommit, Problem, WalletConnection, CompilationResult, DeployedContract, TerminalInstance } from './types';
 import { INITIAL_FILES, DEFAULT_SETTINGS } from './constants';
 import ActivityBar from './components/Layout/ActivityBar';
 import SidebarLeft from './components/Layout/SidebarLeft';
@@ -11,17 +11,22 @@ import CodeEditor from './components/Editor/CodeEditor';
 import EditorTabs from './components/Layout/EditorTabs';
 import Header from './components/Layout/Header';
 import { Button } from './components/UI/Button';
-import { PlayIcon, BotIcon, RocketIcon, BugIcon, UndoIcon, RedoIcon, SaveIcon, EyeIcon, SearchIcon } from './components/UI/Icons';
+import { PlayIcon, BotIcon, RocketIcon, BugIcon, UndoIcon, RedoIcon, SaveIcon, EyeIcon, SearchIcon, MessageSquareIcon, AnalyseIcon, RefreshIcon } from './components/UI/Icons';
 import { DeploymentNotification } from './components/UI/DeploymentNotification';
-import HomeTab from './components/UI/HomeTab';
-import AbiPreviewTab from './components/UI/AbiPreviewTab';
-import MarkdownPreviewTab from './components/UI/MarkdownPreviewTab';
+import { SpecialTab } from './components/Layout/SpecialTab';
 import EmptyState from './components/Layout/EmptyState';
 import { ClarityCompiler } from './services/stacks/compiler';
 import { StacksWalletService } from './services/stacks/wallet';
 import { filesToFileNodes } from './services/templates';
+import { GitHubTemplateService } from './services/githubTemplates';
 import JSZip from 'jszip';
 import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
+import { io, Socket } from 'socket.io-client';
+import { DiscoveryImportType, StacksNetworkType } from './components/Layout/DiscoveryImportModal';
+import IntroLoading from './components/UI/IntroLoading';
+import { webContainerService } from './services/webContainerService';
+import confetti from 'canvas-confetti';
+
 
 const CHANGELOG_CONTENT = `# Changelog
 
@@ -51,12 +56,20 @@ function App() {
         return (saved as ActivityView) || ActivityView.EXPLORER;
     });
 
+    const [loading, setLoading] = useState(true);
+
     useEffect(() => {
         localStorage.setItem('labstx_active_view', activeView);
     }, [activeView]);
 
     // Theme State
-    const [theme, setTheme] = useState<'dark' | 'light'>('light');
+    const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+        return (localStorage.getItem('labstx_theme') as 'dark' | 'light') || 'dark';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_theme', theme);
+    }, [theme]);
 
     // Session State
     const [sessionId] = useState(() => {
@@ -89,6 +102,19 @@ function App() {
         localStorage.setItem('labstx_active_workspace', activeWorkspace);
     }, [activeWorkspace]);
 
+    // Workspace Metadata (timestamps, etc)
+    const [workspaceMetadata, setWorkspaceMetadata] = useState<Record<string, { createdAt: number }>>(() => {
+        const saved = localStorage.getItem('labstx_workspace_metadata');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return { 'default_workspace': { createdAt: Date.now() } }; }
+        }
+        return { 'default_workspace': { createdAt: Date.now() } };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_workspace_metadata', JSON.stringify(workspaceMetadata));
+    }, [workspaceMetadata]);
+
     // History State
     const [history, setHistory] = useState<FileNode[][]>([INITIAL_FILES]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -97,30 +123,22 @@ function App() {
     const files = history[historyIndex];
 
     // Editor Tabs State with persistence
-    const [openFiles, setOpenFiles] = useState<string[]>(() => {
-        const saved = localStorage.getItem('labstx_open_files');
-        if (saved) {
-            try { return JSON.parse(saved); } catch (e) { return ['@home', 'Clarinet.toml', 'simple-counter.clar']; }
-        }
-        return ['@home', 'Clarinet.toml', 'simple-counter.clar'];
-    });
-    const [activeFileId, setActiveFileId] = useState<string | null>(() => {
-        return localStorage.getItem('labstx_active_file_id') || '@home';
-    });
+    // Editor Tabs State (non-persistent)
+    const [openFileIds, setOpenFileIds] = useState<string[]>([]);
+    const [openSpecialIds, setOpenSpecialIds] = useState<string[]>(['@home']);
 
-    useEffect(() => {
-        localStorage.setItem('labstx_open_files', JSON.stringify(openFiles));
-    }, [openFiles]);
+    const [activeFileId, setActiveFileId] = useState<string | null>(null);
+    const [activeSpecialId, setActiveSpecialId] = useState<string | null>('@home');
+    const [activeTabGroup, setActiveTabGroup] = useState<'file' | 'special'>('special');
 
-    useEffect(() => {
-        localStorage.setItem('labstx_active_file_id', activeFileId || '');
-    }, [activeFileId]);
+
 
     const [activeContent, setActiveContent] = useState<string>('');
     const [activeLanguage, setActiveLanguage] = useState<string>('clarity');
     // Tracks which file was last loaded into the editor so we only pull from 'files'
     // when the user actually switches tabs — never during normal typing.
     const loadedFileIdRef = useRef<string | null>(null);
+    const sidebarRightRef = useRef<any>(null);
     const [lineEnding, setLineEnding] = useState<'LF' | 'CRLF'>('CRLF');
     const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
     const cursorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -132,22 +150,68 @@ function App() {
         }, 100);
     }, []);
 
-    // Terminal, Output, Problems State
-    const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
-        { id: '1', type: 'info', content: 'Initializing LabSTX Environment...' },
-        { id: '2', type: 'success', content: 'LabSTX Environment Ready.' }
-    ]);
     const [outputLines, setOutputLines] = useState<string[]>([]);
     const [problems, setProblems] = useState<Problem[]>([]);
 
+    const [terminals, setTerminals] = useState<TerminalInstance[]>(() => [
+        { id: 'default', title: 'clarinet', lines: [], isProcessRunning: false }
+    ]);
+    const [activeTerminalId, setActiveTerminalId] = useState<string>('default');
+    const [discoveryProgress, setDiscoveryProgress] = useState(0);
+
+    // Helper to add lines to a specific terminal
+    const addTerminalLineToInstance = useCallback((terminalId: string, line: Omit<TerminalLine, 'id'>) => {
+        setTerminals(prev => prev.map(t => {
+            if (t.id === terminalId) {
+                return {
+                    ...t,
+                    lines: [...t.lines, { ...line, id: Date.now().toString() + Math.random() }]
+                };
+            }
+            return t;
+        }));
+    }, []);
+
+    const addTerminalLine = useCallback((line: Omit<TerminalLine, 'id'>) => {
+        addTerminalLineToInstance(activeTerminalId, line);
+    }, [activeTerminalId, addTerminalLineToInstance]);
+
+    const handleClearTerminal = useCallback(() => {
+        setTerminals(prev => prev.map(t => t.id === activeTerminalId ? { ...t, lines: [] } : t));
+    }, [activeTerminalId]);
+
     // Compilation & Deployment State
     const [compilationResult, setCompilationResult] = useState<CompilationResult | undefined>();
-    const [wallet, setWallet] = useState<WalletConnection>({
-        type: 'none',
-        connected: false
+    const [wallet, setWallet] = useState<WalletConnection>(() => {
+        const saved = localStorage.getItem('labstx_wallet');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return { type: 'none', connected: false }; }
+        }
+        return { type: 'none', connected: false };
     });
-    const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([]);
-    const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('labstx_wallet', JSON.stringify(wallet));
+    }, [wallet]);
+    const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>(() => {
+        const saved = localStorage.getItem('labstx_deployed_contracts');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return []; }
+        }
+        return [];
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_deployed_contracts', JSON.stringify(deployedContracts));
+    }, [deployedContracts]);
+
+    const handleOpenNewProject = () => {
+        if (!openSpecialIds.includes('@new-project')) {
+            setOpenSpecialIds(prev => [...prev, '@new-project']);
+        }
+        setActiveSpecialId('@new-project');
+        setActiveTabGroup('special');
+    };
 
     // Deployment Notification State
     const [notification, setNotification] = useState<{ deployHash: string; network: string, contractName?: string } | null>(null);
@@ -168,6 +232,40 @@ function App() {
     useEffect(() => {
         localStorage.setItem('labstx_settings', JSON.stringify(settings));
     }, [settings]);
+
+    const [isAiQuotaReached, setIsAiQuotaReached] = useState(false);
+    const [aiStats, setAiStats] = useState<{ aiInteractions: number; aiQuotaLimit: number } | null>(null);
+
+    // AI Quota Checker
+    const handleCheckAiQuota = useCallback(async () => {
+        if (!wallet.address || wallet.address === 'unconnected') return;
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+            const res = await fetch(`${backendUrl}/ide-api/stats/user/${wallet.address}`);
+            if (res.ok) {
+                const stats = await res.json();
+                setAiStats({
+                    aiInteractions: stats.aiInteractions,
+                    aiQuotaLimit: stats.aiQuotaLimit
+                });
+                if (stats.aiInteractions >= stats.aiQuotaLimit) {
+                    setIsAiQuotaReached(true);
+                } else {
+                    setIsAiQuotaReached(false);
+                }
+            }
+        } catch (err) {
+            console.error('[AI Quota Checker] Failed:', err);
+        }
+    }, [wallet.address]);
+
+    useEffect(() => {
+        handleCheckAiQuota();
+        // Check every 6 minutes while app is active
+        const interval = setInterval(handleCheckAiQuota, 6 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [handleCheckAiQuota]);
 
     // Editing State
     const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([]);
@@ -206,11 +304,11 @@ function App() {
 
     // Layout State
     const [leftWidth, setLeftWidth] = useState(300);
-    const [rightWidth, setRightWidth] = useState(320);
+    const [rightWidth, setRightWidth] = useState(450);
     const [terminalHeight, setTerminalHeight] = useState(200);
     const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(true);
-    const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(true);
-    const [isTerminalVisible, setIsTerminalVisible] = useState(true);
+    const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
+    const [isTerminalVisible, setIsTerminalVisible] = useState(false);
 
     // Layout Toggles
     const toggleLeftSidebar = () => setIsLeftSidebarVisible(!isLeftSidebarVisible);
@@ -224,8 +322,8 @@ function App() {
             target: 'body',
             content: (
                 <div className="text-left">
-                    <h3 className="text-lg font-bold text-labstx-orange mb-2">Welcome to LabSTX!</h3>
-                    <p>Let's take a quick tour of your new Clarity smart contract development environment.</p>
+                    <h3 className="text-lg font-bold text-labstx-orange mb-2">Welcome to LabSTX! ✨</h3>
+                    <p>The premier development environment for Clarity smart contracts on the Stacks blockchain.</p>
                 </div>
             ),
             placement: 'center',
@@ -233,52 +331,57 @@ function App() {
         },
         {
             target: '#workspace-selector',
-            content: 'Switch between different projects or create a new one here.',
+            content: 'Manage your projects here. You can create, rename, import, and even sync workspaces directly from the server.',
             placement: 'bottom',
         },
         {
             target: '#home-button',
-            content: 'The Home view provides templates and walkthroughs to get you started quickly.',
+            content: 'The Home view is your dashboard. Access smart contract templates and follow walkthroughs to learn Clarity.',
             placement: 'right',
         },
         {
             target: '#view-explorer',
-            content: 'Manage your files and folders in the Explorer view.',
+            content: 'Your file system at a glance. Create folders, contracts, and markdown documentation here.',
             placement: 'right',
         },
         {
-            target: '#create-project-button',
-            content: 'Quickly start a new project from building blocks.',
-            placement: 'right',
+            target: '#editor-search-input',
+            content: 'Quickly find and replace text across your active file with powerful search tools.',
+            placement: 'bottom',
         },
         {
-            target: '#editor-tabs',
-            content: 'Switch between open files using these tabs.',
+            target: '#preview-button',
+            content: 'Switch to Preview mode to see rendered Markdown or explore the ABI specification of your Clarity contracts.',
             placement: 'bottom',
         },
         {
             target: '#check-button',
-            content: 'Run a syntax and logic check on your current Clarity contract.',
+            content: 'Run a syntax and logic check on your current Clarity contract using Clarinet.',
             placement: 'bottom',
         },
         {
             target: '#deploy-button',
-            content: 'Deploy your contracts to the Stacks network when you are ready.',
+            content: 'Deploy your contracts to Stacks Mainnet, Testnet when you are ready.',
             placement: 'bottom',
         },
         {
             target: '#ai-assistant-button',
-            content: 'Open the AI Assistant to help you write and debug code.',
+            content: 'Open the LabSTX AI Assistant to help you write, explain, and debug Clarity code.',
             placement: 'left',
         },
         {
             target: '#terminal-panel',
-            content: 'Interact with the Stacks blockchain and view logs in the terminal.',
+            content: 'Interact with the Stacks blockchain, view compiler output, and track code problems in real-time.',
+            placement: 'top',
+        },
+        {
+            target: '#status-bar',
+            content: 'Stay updated on your Problem count, line numbers, and the latest LabSTX improvements via the Changelog.',
             placement: 'top',
         },
         {
             target: '#layout-controls',
-            content: 'Customize your workspace by toggling sidebars and panels.',
+            content: 'Customize your layout! Toggle the sidebars, panels, and switch between light and dark themes.',
             placement: 'bottom',
         }
     ]);
@@ -297,6 +400,142 @@ function App() {
             localStorage.setItem('labstx_has_seen_tour', 'true');
         }
     };
+
+    // Initialize WebContainer
+    useEffect(() => {
+        const initWC = async () => {
+            try {
+                await webContainerService.boot();
+                console.log('[WebContainer] Booted successfully');
+
+                // Initial mount of files
+                const currentFiles = getLatestFiles();
+                const wcFiles = transformFilesToWC(currentFiles);
+                await webContainerService.mountFiles(wcFiles);
+                console.log('[WebContainer] Files mounted');
+            } catch (err) {
+                console.error('[WebContainer] Boot failed:', err);
+            }
+        };
+        initWC();
+    }, []);
+
+    // Helper to transform FileNode[] to WebContainer FS format
+    const transformFilesToWC = (nodes: FileNode[]): any => {
+        const result: any = {};
+        nodes.forEach(node => {
+            if (node.type === 'file') {
+                result[node.name] = {
+                    file: {
+                        contents: node.content || '',
+                    },
+                };
+            } else if (node.children) {
+                result[node.name] = {
+                    directory: transformFilesToWC(node.children),
+                };
+            }
+        });
+        return result;
+    };
+
+    // --- Deep Link Handling ---
+    const handleDeepLink = useCallback(() => {
+        const params = new URLSearchParams(window.location.search);
+
+        // 1. Template Deep Link
+        const templateId = params.get('template_id');
+        if (templateId) {
+            const loadDeepLinkTemplate = async () => {
+                try {
+                    const templates = await GitHubTemplateService.fetchTemplates();
+                    const template = templates.find(t => t.id === templateId);
+                    if (template) {
+                        const workspaceName = `${template.name} (Imported)`;
+                        const files = await GitHubTemplateService.fetchTemplateFiles(template.path);
+                        const newRoot = GitHubTemplateService.templateToFileNodes(files);
+
+                        setWorkspaces(prev => ({ ...prev, [workspaceName]: newRoot }));
+                        setWorkspaceMetadata(prev => ({ ...prev, [workspaceName]: { createdAt: Date.now() } }));
+                        setActiveWorkspace(workspaceName);
+
+                        setHistory([newRoot]);
+                        setHistoryIndex(0);
+
+                        setOpenFileIds([]);
+                        setActiveFileId(null);
+                        setActiveTabGroup('file');
+
+                        addTerminalLine({ type: 'success', content: `Imported template from GitHub: ${template.name}` });
+                        
+                        // Clear URL params
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                } catch (err) {
+                    console.error('Failed to load deep link template:', err);
+                    addTerminalLine({ type: 'error', content: 'Failed to load template from GitHub deep link.' });
+                }
+            };
+            loadDeepLinkTemplate();
+            return;
+        }
+
+        // 2. Snippet Deep Link
+        const snippetCodeBase64 = params.get('snippet_code');
+        if (snippetCodeBase64) {
+            try {
+                const code = decodeURIComponent(escape(window.atob(snippetCodeBase64)));
+                const name = params.get('snippet_name') || 'snippet.clar';
+                const lang = params.get('snippet_lang') || 'clarity';
+
+                const newFile: FileNode = {
+                    id: `${name}-${Date.now()}`,
+                    name,
+                    type: 'file',
+                    language: lang,
+                    content: code
+                };
+
+                setWorkspaces(prev => {
+                    const currentFiles = prev[activeWorkspace] || INITIAL_FILES;
+                    const contractsFolder = currentFiles.find(n => n.name === 'contracts' && n.type === 'folder');
+
+                    let updatedFiles;
+                    if (contractsFolder && contractsFolder.children) {
+                        updatedFiles = currentFiles.map(n =>
+                            n.id === contractsFolder.id
+                                ? { ...n, children: [...(n.children || []), newFile] }
+                                : n
+                        );
+                    } else {
+                        updatedFiles = [...currentFiles, newFile];
+                    }
+
+                    return { ...prev, [activeWorkspace]: updatedFiles };
+                });
+
+                setActiveFileId(newFile.id);
+                setOpenFileIds(prev => prev.includes(newFile.id) ? prev : [...prev, newFile.id]);
+                setActiveTabGroup('file');
+
+                addTerminalLine({ type: 'success', content: `Loaded snippet: ${name}` });
+
+                // Clear URL params
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } catch (e) {
+                console.error('Failed to decode snippet:', e);
+                addTerminalLine({ type: 'error', content: 'Failed to decode snippet code.' });
+            }
+        }
+    }, [activeWorkspace, addTerminalLine]);
+
+    useEffect(() => {
+        // Run deep link handling after a short delay to ensure initial state is settled
+        const timer = setTimeout(() => {
+            handleDeepLink();
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [handleDeepLink]);
 
     // Prevent data loss and clear session on close
     useEffect(() => {
@@ -377,15 +616,10 @@ function App() {
         document.body.style.userSelect = 'none';
     }, [terminalHeight]);
 
-    const addTerminalLine = useCallback((line: Omit<TerminalLine, 'id'>) => {
-        setTerminalLines(prev => [...prev, {
-            ...line,
-            id: Date.now().toString() + Math.random().toString(36).substring(2, 9)
-        }]);
-    }, []);
 
-    const handleClearTerminal = useCallback(() => {
-        setTerminalLines([]);
+    const handleConnectWallet = useCallback(() => {
+        setActiveView(ActivityView.DEPLOY);
+        setIsLeftSidebarVisible(true);
     }, []);
 
     // Recursively find file by ID
@@ -425,20 +659,134 @@ function App() {
         return null;
     };
 
+    // Find file by its full path
+    const findFileByPath = (nodes: FileNode[], targetPath: string, currentPath = ''): FileNode | null => {
+        for (const node of nodes) {
+            const nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+            if (nodePath === targetPath) return node;
+            if (node.children) {
+                const found = findFileByPath(node.children, targetPath, nodePath);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
     // Navigate the editor to a specific file + line/column (used by Problems "Locate")
     const handleLocateProblem = useCallback((fileName: string, line: number, column: number) => {
         const target = findFile(files, fileName);
         if (!target) return;
         // Open & activate the file tab
-        if (!openFiles.includes(target.id)) {
-            setOpenFiles(prev => [...prev, target.id]);
+        if (!openFileIds.includes(target.id)) {
+            setOpenFileIds(prev => [...prev, target.id]);
         }
         setActiveFileId(target.id);
+        setActiveTabGroup('file');
+
         // Slight delay so Monaco mounts the new file before we jump
         setTimeout(() => {
             setEditorAction({ type: 'gotoLine', timestamp: Date.now(), line, column });
         }, 80);
-    }, [files, openFiles]);
+    }, [files, openFileIds]);
+
+    const handleExplainCode = useCallback(() => {
+        if (!activeFileId) return;
+        const file = findFile(files, activeFileId);
+        if (!file) return;
+
+        const command = `Act as an expert Clarity smart contract developer. 
+Analyze the file @${file.name} and provide a comprehensive, line-by-line technical breakdown. 
+For each block of code:
+1. Explain the specific logic and syntax used.
+2. Identify any state changes (data-set, data-get, etc.).
+3. Highlight security considerations or Stacks-specific patterns.
+Break the explanation down into clear, readable sections.`;
+
+        if (!isRightSidebarVisible) {
+            setIsRightSidebarVisible(true);
+            setTimeout(() => {
+                sidebarRightRef.current?.sendMessage(command);
+            }, 300);
+        } else {
+            sidebarRightRef.current?.sendMessage(command);
+        }
+    }, [activeFileId, files, isRightSidebarVisible]);
+
+    const handleAnalyseCode = useCallback(() => {
+        if (!activeFileId) return;
+        const file = findFile(files, activeFileId);
+        if (!file) return;
+
+        const command = `Act as a senior Clarity software architect. 
+Perform a deep structural and logical analysis of the smart contract @${file.name}.
+
+Your analysis should include:
+1. **Contract Overview**: Briefly describe the intended purpose and core functionality.
+2. **State Management Analysis**: Review all (define-data-var) and (define-map) entries. Are they efficient? Are there any missing data points?
+3. **Public API Surface**: Analyze all (define-public) functions. Detail the inputs, outputs, and any potential side effects.
+4. **Access Control Audit**: Evaluate the permissioning logic (e.g., use of tx-sender vs contract-caller).
+5. **Architectural Improvements**: Suggest ways to refactor the code for better modularity or lower execution costs.
+6. **Integration Insights**: How should a frontend or other contracts best interact with this API?
+
+Provide a high-level summary followed by technical details for each section.`;
+        if (!isRightSidebarVisible) {
+            setIsRightSidebarVisible(true);
+            setTimeout(() => {
+                sidebarRightRef.current?.sendMessage(command);
+            }, 300);
+        } else {
+            sidebarRightRef.current?.sendMessage(command);
+        }
+    }, [activeFileId, files, isRightSidebarVisible]);
+
+
+    const handleDebugCode = useCallback(() => {
+        if (!activeFileId) return;
+        const file = findFile(files, activeFileId);
+        if (!file) return;
+
+        const command = `Act as a senior Clarity security auditor and debugger. 
+Deeply analyze the code in @${file.name} to identify bugs, logical errors, and optimization opportunities.
+
+Please structure your response as follows:
+1. **Critical Issues**: Identify any bugs that would cause the contract to fail or lose funds.
+2. **Logic & Edge Cases**: Check if functions handle 'null' inputs, unauthorized callers, or unexpected state transitions.
+3. **Clarity Best Practices**: Suggest improvements for gas efficiency (e.g., using 'map-get?' effectively) and code readability.
+4. **Security Check**: Verify 'is-eq tx-sender contract-owner' checks and proper use of 'unwrap!' vs 'try!'.
+5. **Proposed Fixes**: Provide the corrected code snippets for any issues found.
+
+Focus specifically on the unique traits of the Stacks blockchain and the Post-Condition mode.`;
+
+        if (!isRightSidebarVisible) {
+            setIsRightSidebarVisible(true);
+            setTimeout(() => {
+                sidebarRightRef.current?.sendMessage(command);
+            }, 300);
+        } else {
+            sidebarRightRef.current?.sendMessage(command);
+        }
+    }, [activeFileId, files, isRightSidebarVisible]);
+
+    const handleAskAIFix = useCallback((problem: Problem) => {
+        const command = `Act as an expert Clarity debugger. 
+I'm seeing an error in my Clarity contract @${problem.file}
+
+**Error Description**: 
+${problem.description}
+
+Please analyze the code for @${problem.file} and suggest a precise fix.
+Explain why this error is occurring and how the proposed change resolves it. 
+Include the corrected full and detailed code`;
+
+        if (!isRightSidebarVisible) {
+            setIsRightSidebarVisible(true);
+            setTimeout(() => {
+                sidebarRightRef.current?.sendMessage(command);
+            }, 300);
+        } else {
+            sidebarRightRef.current?.sendMessage(command);
+        }
+    }, [isRightSidebarVisible]);
 
     // Helper to get all descendant IDs of a node (including itself)
     const getSubtreeIds = (node: FileNode): string[] => {
@@ -456,21 +804,28 @@ function App() {
     // would re-run this effect on every keystroke (because handleEditorChange
     // mutates the history/files array), causing Monaco's 'value' prop to reset
     // mid-edit and jump the cursor to the last line.
-    useEffect(() => {
-        if (activeFileId === loadedFileIdRef.current) return; // same file — don't touch the editor
-        loadedFileIdRef.current = activeFileId;
+    // Detect line endings in content
+    const detectLineEnding = (content: string): 'LF' | 'CRLF' => {
+        if (content.includes('\r\n')) return 'CRLF';
+        return 'LF';
+    };
 
-        if (activeFileId) {
+    // Update content ONLY when the user switches to a different file tab.
+    useEffect(() => {
+        if (activeTabGroup === 'file' && activeFileId && activeFileId !== loadedFileIdRef.current) {
             const file = findFile(files, activeFileId);
             if (file && file.type === 'file') {
-                setActiveContent(file.content || '');
+                const content = file.content || '';
+                setActiveContent(content);
                 setActiveLanguage(file.language || 'plaintext');
+                setLineEnding(detectLineEnding(content));
+                loadedFileIdRef.current = activeFileId;
             }
-        } else {
+        } else if (activeTabGroup === 'file' && !activeFileId) {
             setActiveContent('');
+            loadedFileIdRef.current = null;
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFileId]); // Only re-run when the user switches tabs — NOT on every keystroke
+    }, [activeFileId, activeTabGroup]);
 
     // --- Theme Management ---
     useEffect(() => {
@@ -491,27 +846,45 @@ function App() {
         }
 
         // Save current state before switching
-        setWorkspaces(prev => ({ ...prev, [activeWorkspace]: history[historyIndex] }));
+        setWorkspaces(prev => ({ ...prev, [activeWorkspace]: getLatestFiles() }));
 
-        const newRoot: FileNode[] = [{
-            id: 'root',
-            name: name,
-            type: 'folder',
-            children: [
-                { id: 'README.md', name: 'README.md', type: 'file', language: 'plaintext', content: `# ${name}\n\nNew workspace created.` }
-            ]
-        }];
+        const newRoot: FileNode[] = [
+            {
+                id: 'contracts',
+                name: 'contracts',
+                type: 'folder',
+                children: []
+            },
+            {
+                id: 'tests',
+                name: 'tests',
+                type: 'folder',
+                children: []
+            },
+            {
+                id: 'README.md',
+                name: 'README.md',
+                type: 'file',
+                language: 'markdown',
+                content: `# ${name}\n\nNew Clarity workspace created.\n\n- **contracts/**: Place your Clarity contracts here.\n- **tests/**: Place your Vitest tests here.`
+            }
+        ];
 
-        setWorkspaces(prev => ({ ...prev, [name]: newRoot }));
+        const newWorkspaces = { ...workspaces, [name]: newRoot };
+        setWorkspaces(newWorkspaces);
+        setWorkspaceMetadata(prev => ({ ...prev, [name]: { createdAt: Date.now() } }));
         setActiveWorkspace(name);
 
         // Reset view
         setHistory([newRoot]);
         setHistoryIndex(0);
-        setOpenFiles(['README.md']);
+        setOpenFileIds(['README.md']);
         setActiveFileId('README.md');
+        setOpenSpecialIds(['@home']);
+        setActiveSpecialId('@home');
+        setActiveTabGroup('file');
         setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
-        setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'success', content: `Created and switched to workspace: ${name}` }]);
+        addTerminalLine({ type: 'success', content: `Created and switched to workspace: ${name}` });
         setOutputLines([]);
         setProblems([]);
     };
@@ -528,11 +901,8 @@ function App() {
         const newWorkspaces = { ...workspaces };
         delete newWorkspaces[activeWorkspace];
 
-        // Update the root folder name if it exists to match workspace name
+        // No longer renaming root folder name since workspaces are flat by default
         const updatedRoot = [...currentData];
-        if (updatedRoot.length > 0 && updatedRoot[0].type === 'folder') {
-            updatedRoot[0] = { ...updatedRoot[0], name: newName };
-        }
 
         newWorkspaces[newName] = updatedRoot;
 
@@ -541,14 +911,14 @@ function App() {
         setHistory([updatedRoot]);
         setHistoryIndex(0);
 
-        setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'success', content: `Renamed workspace to: ${newName}` }]);
+        addTerminalLine({ type: 'success', content: `Renamed workspace to: ${newName}` });
     };
 
     const handleSwitchWorkspace = (name: string) => {
         if (name === activeWorkspace) return;
 
         // Save current state
-        setWorkspaces(prev => ({ ...prev, [activeWorkspace]: history[historyIndex] }));
+        setWorkspaces(prev => ({ ...prev, [activeWorkspace]: getLatestFiles() }));
 
         // Load new state
         const nextFiles = workspaces[name];
@@ -557,12 +927,73 @@ function App() {
         setActiveWorkspace(name);
         setHistory([nextFiles]);
         setHistoryIndex(0);
-        setOpenFiles([]);
+        setOpenFileIds([]);
         setActiveFileId(null);
+        setActiveTabGroup('special');
+        setActiveSpecialId('@home');
         setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
-        setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: `Switched to workspace: ${name}` }]);
+        addTerminalLine({ type: 'info', content: `Switched to workspace: ${name}` });
         setOutputLines([]);
         setProblems([]);
+    };
+
+    const handleDeleteWorkspace = () => {
+        const workspaceNames = Object.keys(workspaces);
+        if (workspaceNames.length <= 1) {
+            alert("Cannot delete the only workspace.");
+            return;
+        }
+
+        if (window.confirm(`Are you sure you want to delete workspace "${activeWorkspace}"? This action cannot be undone.`)) {
+            const workspaceToDelete = activeWorkspace;
+            const newWorkspaces = { ...workspaces };
+            delete newWorkspaces[workspaceToDelete];
+
+            // Identify the next workspace and its files BEFORE updating any state
+            const remainingNames = Object.keys(newWorkspaces);
+            const nextWorkspace = remainingNames[0];
+            const nextFiles = newWorkspaces[nextWorkspace];
+
+            // Perform a "clean" switch: Update workspaces and active workspace simultaneously
+            // We do NOT call handleSwitchWorkspace here because it tries to save the current (deleted) state.
+            setWorkspaces(newWorkspaces);
+            setActiveWorkspace(nextWorkspace);
+            setHistory([nextFiles]);
+            setHistoryIndex(0);
+            setOpenFileIds([]);
+            setActiveFileId(null);
+            setActiveTabGroup('special');
+            setActiveSpecialId('@home');
+            setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
+            setOutputLines([]);
+            setProblems([]);
+
+            addTerminalLine({ type: 'warning', content: `Deleted workspace: ${workspaceToDelete}` });
+            addTerminalLine({ type: 'info', content: `Switched to workspace: ${nextWorkspace}` });
+        }
+    };
+
+    const handleCloneWorkspace = () => {
+        const newName = window.prompt("Enter name for the cloned workspace:", `${activeWorkspace}-copy`);
+        if (!newName) return;
+
+        if (workspaces[newName]) {
+            alert("A workspace with this name already exists.");
+            return;
+        }
+
+        const currentFiles = history[historyIndex];
+        // Deep copy of files to avoid shared reference issues
+        const clonedFiles = JSON.parse(JSON.stringify(currentFiles));
+
+        // Update root folder name if applicable
+        if (clonedFiles.length > 0 && clonedFiles[0].type === 'folder') {
+            clonedFiles[0].name = newName;
+        }
+
+        setWorkspaces(prev => ({ ...prev, [newName]: clonedFiles }));
+        handleSwitchWorkspace(newName);
+        addTerminalLine({ type: 'success', content: `Cloned workspace "${activeWorkspace}" to "${newName}"` });
     };
 
     const handleDownloadWorkspace = async () => {
@@ -588,7 +1019,8 @@ function App() {
             };
 
             // Start processing from root
-            files.forEach(node => processNode(node, zip));
+            const currentFiles = getLatestFiles();
+            currentFiles.forEach(node => processNode(node, zip));
 
             // Generate zip
             const content = await zip.generateAsync({ type: "blob" });
@@ -605,17 +1037,11 @@ function App() {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
 
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'success', content: `Workspace '${activeWorkspace}' downloaded successfully.` }
-            ]);
+            addTerminalLine({ type: 'success', content: `Workspace '${activeWorkspace}' downloaded successfully.` });
 
         } catch (error) {
             console.error("Download failed:", error);
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'error', content: `Failed to download workspace: ${error}` }
-            ]);
+            addTerminalLine({ type: 'error', content: `Failed to download workspace: ${error}` });
         }
     };
 
@@ -637,10 +1063,10 @@ function App() {
 
                 // Process all files in zip
                 for (const [path, zipEntry] of Object.entries(zipContent.files)) {
-                    if (zipEntry.dir) continue;
+                    if ((zipEntry as any).dir) continue;
 
                     const parts = path.split('/').filter(p => p);
-                    const content = await zipEntry.async('string');
+                    const content = await (zipEntry as any).async('string');
 
                     // Build file tree
                     let currentPath = '';
@@ -680,23 +1106,20 @@ function App() {
                 }
 
                 if (fileNodes.length > 0) {
+                    setWorkspaces(prev => ({ ...prev, [activeWorkspace]: fileNodes }));
                     setHistory([fileNodes]);
                     setHistoryIndex(0);
-                    setOpenFiles([]);
+                    setOpenFileIds([]);
                     setActiveFileId(null);
-                    setTerminalLines(prev => [
-                        ...prev,
-                        { id: Date.now().toString(), type: 'success', content: `Workspace imported successfully.` }
-                    ]);
+                    setActiveTabGroup('special');
+                    setActiveSpecialId('@home');
+                    addTerminalLine({ type: 'success', content: `Workspace imported successfully.` });
                 }
             };
             input.click();
         } catch (error) {
             console.error("Import failed:", error);
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'error', content: `Failed to import workspace: ${error}` }
-            ]);
+            addTerminalLine({ type: 'error', content: `Failed to import workspace: ${error}` });
         }
     };
 
@@ -717,12 +1140,36 @@ function App() {
 
     // --- History Management ---
 
-    const addToHistory = (newFiles: FileNode[]) => {
+    const getLatestFiles = useCallback(() => {
+        if (!historyDebounceRef.current || !activeFileId) return files;
+
+        clearTimeout(historyDebounceRef.current);
+        const updateContentRecursive = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map(node => {
+                if (node.id === activeFileId) {
+                    return { ...node, content: activeContent };
+                }
+                if (node.children) {
+                    return { ...node, children: updateContentRecursive(node.children) };
+                }
+                return node;
+            });
+        };
+        const updatedFiles = updateContentRecursive(history[historyIndex]);
+        setHistory(prev => {
+            const newHist = [...prev];
+            newHist[historyIndex] = updatedFiles;
+            return newHist;
+        });
+        return updatedFiles;
+    }, [files, activeFileId, activeContent, history, historyIndex]);
+
+    const addToHistory = useCallback((newFiles: FileNode[]) => {
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(newFiles);
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
-    };
+    }, [history, historyIndex]);
 
     const undo = () => {
         if (historyIndex > 0) {
@@ -757,6 +1204,13 @@ function App() {
         const newFiles = updateContentRecursive(history[historyIndex]);
         addToHistory(newFiles);
 
+        // SYNC: If this is the active file, update activeContent so the editor reflects changes immediately
+        if (fileId === activeFileId) {
+            setActiveContent(value);
+            // Also force Monaco to update even if it has focus
+            setEditorAction({ type: 'updateContent', timestamp: Date.now(), content: value });
+        }
+
         // Update Git modified status
         setGitState(prev => {
             if (!prev.modifiedFiles.includes(fileId) && !prev.stagedFiles.includes(fileId)) {
@@ -764,7 +1218,8 @@ function App() {
             }
             return prev;
         });
-    }, [history, historyIndex, addToHistory]);
+    }, [history, historyIndex, addToHistory, activeFileId]);
+
 
     const handleEditorChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFileId) return;
@@ -792,8 +1247,16 @@ function App() {
                 const newHist = [...prev];
                 const currentFiles = newHist[historyIndex];
                 if (!currentFiles) return prev;
-                const newFiles = updateContentRecursive(currentFiles);
-                newHist[historyIndex] = newFiles;
+                const updatedFiles = updateContentRecursive(currentFiles);
+                newHist[historyIndex] = updatedFiles;
+
+                // SYNC TO WEBCONTAINER
+                const file = findFile(updatedFiles, activeFileId);
+                const path = getFilePath(updatedFiles, activeFileId);
+                if (file && path) {
+                    webContainerService.writeFile(path, value);
+                }
+
                 return newHist;
             });
 
@@ -805,10 +1268,13 @@ function App() {
                 return prev;
             });
         }, 300); // 300ms debounce
-    }, [activeFileId, historyIndex]);
+    }, [activeFileId, historyIndex, getFilePath, findFile]);
 
     const handleSaveFile = useCallback(() => {
         if (!activeFileId || !dirtyFileIds.includes(activeFileId)) return;
+
+        // Force immediate sync of any pending history updates before saving
+        const currentFiles = getLatestFiles();
 
         // Move from dirty to git modified
         setDirtyFileIds(prev => prev.filter(id => id !== activeFileId));
@@ -819,25 +1285,79 @@ function App() {
             return prev;
         });
 
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Saved: ${findFile(files, activeFileId)?.name}` }
-        ]);
+        addTerminalLine({ type: 'success', content: `Saved: ${findFile(files, activeFileId)?.name}` });
 
         // Trigger save effect in editor if needed
         setEditorAction({ type: 'save', timestamp: Date.now() });
-    }, [activeFileId, dirtyFileIds, files]);
+    }, [activeFileId, dirtyFileIds, files, activeContent, historyIndex]);
 
     const handleClearEditorAction = useCallback(() => {
         setEditorAction({ type: null, timestamp: 0 });
     }, []);
 
+    const runFullSync = useCallback(async (silent: boolean = false, filesOverride?: FileNode[]) => {
+        if (!silent) addTerminalLine({ type: 'info', content: `Syncing workspace...` });
+        const zip = new JSZip();
+        const filesToSync = filesOverride || files;
+        const processNode = (node: FileNode, folder: any) => {
+            if (node.type === 'folder') {
+                const newFolder = folder ? folder.folder(node.name) : zip.folder(node.name);
+                if (node.children) node.children.forEach(child => processNode(child, newFolder));
+            } else {
+                const content = node.content || '';
+                if (folder) folder.file(node.name, content);
+                else zip.file(node.name, content);
+            }
+        };
+        filesToSync.forEach(node => processNode(node, zip));
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        const res = await ClarityCompiler.initWorkspace(sessionId, zipBlob);
 
+        // Clear tracked deletions after full sync
+        if (res.success) {
+            setDeletedFilePaths([]);
+        }
+        return res;
+    }, [files, sessionId, addTerminalLine]);
+
+    const runDeltaSync = useCallback(async () => {
+        const changedFiles: Record<string, string> = {};
+
+        // Mirror backend workspace hoisting: if there's exactly one root folder, strip its name
+        const processPath = (rawPath: string | null) => {
+            if (!rawPath) return null;
+            if (files.length > 0 && files[0].type === 'folder' && rawPath.startsWith(files[0].name + '/')) {
+                return rawPath.substring(files[0].name.length + 1);
+            }
+            return rawPath;
+        };
+
+        dirtyFileIds.forEach(id => {
+            const file = findFile(files, id);
+            if (file && file.type === 'file') {
+                const path = processPath(getFilePath(files, id));
+                if (path) changedFiles[path] = file.content || '';
+            }
+        });
+        if (activeFileId && !dirtyFileIds.includes(activeFileId)) {
+            const file = findFile(files, activeFileId);
+            if (file && file.type === 'file') {
+                const path = processPath(getFilePath(files, activeFileId));
+                if (path) changedFiles[path] = file.content || activeContent;
+            }
+        }
+
+        const res = await ClarityCompiler.updateWorkspace(sessionId, changedFiles, [], []);
+
+        // Clear deletions if successful
+        if (res.success) {
+            setDeletedFilePaths([]);
+        }
+        return res;
+    }, [files, sessionId, dirtyFileIds, activeFileId, activeContent, findFile, getFilePath]);
     const handleCompile = async () => {
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'command', content: `Syncing workspace and running clarinet check...` },
-        ]);
+        if (!isTerminalVisible) setIsTerminalVisible(true);
+        addTerminalLine({ type: 'command', content: `Syncing workspace and running clarinet check...` });
 
         setOutputLines([
             `> Executing: clarinet check (Workspace Sync)`,
@@ -851,94 +1371,45 @@ function App() {
         try {
             let result: CompilationResult;
 
-            const runFullSync = async () => {
-                const zip = new JSZip();
-                const processNode = (node: FileNode, folder: any) => {
-                    if (node.type === 'folder') {
-                        const newFolder = folder ? folder.folder(node.name) : zip.folder(node.name);
-                        if (node.children) node.children.forEach(child => processNode(child, newFolder));
-                    } else {
-                        const content = node.content || '';
-                        if (folder) folder.file(node.name, content);
-                        else zip.file(node.name, content);
+            // Force immediate sync of any pending history updates before compile
+            const currentFilesToSync = getLatestFiles();
+
+            // Always perform Full Sync for maximum reliability
+            result = await runFullSync(true, currentFilesToSync);
+            setFirstRunWorkspaces(prev => ({ ...prev, [activeWorkspace]: true }));
+
+            // Extract functions for usage tracking
+            const activeFile = activeFileId ? findFile(files, activeFileId) : null;
+            const functionMatches = activeFile?.content?.matchAll(/\(define-(public|read-only|private)\s+([a-zA-Z0-9-]+)/g) || [];
+            const functions = Array.from(functionMatches).map(m => m[2]);
+
+            // Telemetry Ingest
+            fetch('/ide-api/stats/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventType: 'COMPILATION',
+                    wallet: wallet.address || 'unconnected',
+                    payload: {
+                        contractName: activeFile ? activeFile.name : 'unknown',
+                        network: settings.network,
+                        status: result.success ? 'success' : 'failure',
+                        metadata: { 
+                            errors: result.errors?.length || 0,
+                            functions: functions
+                        }
                     }
-                };
-                files.forEach(node => processNode(node, zip));
-                const zipBlob = await zip.generateAsync({ type: "blob" });
-                const res = await ClarityCompiler.initWorkspace(sessionId, zipBlob);
-
-                // Clear tracked deletions after full sync
-                if (res.success) {
-                    setDeletedFilePaths([]);
-                }
-                return res;
-            };
-
-            const runDeltaSync = async () => {
-                const changedFiles: Record<string, string> = {};
-
-                // Mirror backend workspace hoisting: if there's exactly one root folder, strip its name
-                const processPath = (rawPath: string | null) => {
-                    if (!rawPath) return null;
-                    if (files.length === 1 && files[0].type === 'folder' && rawPath.startsWith(files[0].name + '/')) {
-                        return rawPath.substring(files[0].name.length + 1);
-                    }
-                    return rawPath;
-                };
-
-                dirtyFileIds.forEach(id => {
-                    const file = findFile(files, id);
-                    if (file && file.type === 'file') {
-                        const path = processPath(getFilePath(files, id));
-                        if (path) changedFiles[path] = file.content || '';
-                    }
-                });
-                if (activeFileId && !dirtyFileIds.includes(activeFileId)) {
-                    const file = findFile(files, activeFileId);
-                    if (file && file.type === 'file') {
-                        const path = processPath(getFilePath(files, activeFileId));
-                        if (path) changedFiles[path] = file.content || activeContent;
-                    }
-                }
-
-                const processedDeletedPaths = deletedFilePaths.map(p => processPath(p)).filter(Boolean) as string[];
-                const res = await ClarityCompiler.updateWorkspace(sessionId, changedFiles, processedDeletedPaths);
-
-                // Clear deletions if successful
-                if (res.success) {
-                    setDeletedFilePaths([]);
-                }
-                return res;
-            };
-
-            const isFirst = !firstRunWorkspaces[activeWorkspace];
-
-            if (isFirst) {
-                result = await runFullSync();
-                setFirstRunWorkspaces(prev => ({ ...prev, [activeWorkspace]: true }));
-            } else {
-                try {
-                    result = await runDeltaSync();
-                } catch (e: any) {
-                    if (e.message === 'WORKSPACE_EXPIRED') {
-                        setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: `Workspace expired on server. Running Full Sync...` }]);
-                        result = await runFullSync();
-                    } else {
-                        throw e;
-                    }
-                }
-            }
+                })
+            }).catch(err => console.error('Telemetry failed:', err));
 
             setCompilationResult(result);
+
 
             // clear dirty
             setDirtyFileIds([]);
 
             if (result.success) {
-                setTerminalLines(prev => [
-                    ...prev,
-                    { id: Date.now().toString(), type: 'success', content: 'Clarinet Check successful!' },
-                ]);
+                addTerminalLine({ type: 'success', content: 'Clarinet Check successful!' });
 
                 const logLines = result.output ? result.output.split('\n') : ['Analysis completed.'];
                 setOutputLines(prev => [
@@ -953,10 +1424,7 @@ function App() {
                     setOutputLines(prev => [...prev, `> 🔧 Functions found: ${result.metadata.entryPoints.map(ep => ep.name).join(', ')}`]);
                 }
             } else {
-                setTerminalLines(prev => [
-                    ...prev,
-                    { id: Date.now().toString(), type: 'error', content: 'Clarinet Check failed. See Output and Problems for details.' },
-                ]);
+                addTerminalLine({ type: 'error', content: 'Clarinet Check failed. See Output and Problems for details.' });
 
                 const logLines = result.output ? result.output.split('\n') : ['Analysis failed.'];
                 setOutputLines(prev => [
@@ -968,67 +1436,131 @@ function App() {
                 ]);
 
                 if (result.errors) {
-                    const fileProblems: Problem[] = result.errors.map((error, idx) => ({
-                        id: `${Date.now()}-${idx}`,
-                        file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
-                        description: error,
-                        line: 1,
-                        column: 1,
-                        severity: 'error'
-                    }));
+                    const fileProblems: Problem[] = result.errors.map((error, idx) => {
+                        // Clarinet error format: path/to/file.clar:line:column: error: description
+                        const match = error.match(/^(.*?):(\d+):(\d+): (?:error|syntax error|warning): (.*)$/i);
+                        if (match) {
+                            const filePath = match[1];
+                            const fileName = filePath.split(/[/\\]/).pop() || filePath;
+                            return {
+                                id: `${Date.now()}-${idx}`,
+                                file: fileName,
+                                description: match[4],
+                                line: parseInt(match[2], 10),
+                                column: parseInt(match[3], 10),
+                                severity: error.toLowerCase().includes('warning') ? 'warning' : 'error'
+                            };
+                        }
+                        return {
+                            id: `${Date.now()}-${idx}`,
+                            file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
+                            description: error,
+                            line: 1,
+                            column: 1,
+                            severity: 'error'
+                        };
+                    });
                     setProblems(fileProblems);
                 }
 
-                if (!isTerminalVisible) setIsTerminalVisible(true);
+
             }
         } catch (error: any) {
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'error', content: `Check error: ${error.message}` },
-            ]);
+            addTerminalLine({ type: 'error', content: `Check error: ${error.message}` });
             setOutputLines(prev => [...prev, `Error: ${error.message}`]);
-            setProblems([{
-                id: Date.now().toString(),
-                file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
-                description: error.message,
-                line: 1,
-                column: 1,
-                severity: 'error'
-            }]);
+
+            // Attempt to parse catch error as well
+            const catchMatch = error.message.match(/^(.*?):(\d+):(\d+): (?:error|syntax error|warning): (.*)$/i);
+            if (catchMatch) {
+                const filePath = catchMatch[1];
+                const fileName = filePath.split(/[/\\]/).pop() || filePath;
+                setProblems([{
+                    id: Date.now().toString(),
+                    file: fileName,
+                    description: catchMatch[4],
+                    line: parseInt(catchMatch[2], 10),
+                    column: parseInt(catchMatch[3], 10),
+                    severity: 'error'
+                }]);
+            } else {
+                setProblems([{
+                    id: Date.now().toString(),
+                    file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
+                    description: error.message,
+                    line: 1,
+                    column: 1,
+                    severity: 'error'
+                }]);
+            }
+        }
+
+    };
+
+    const handleFullSync = async () => {
+        if (!isTerminalVisible) setIsTerminalVisible(true);
+        const isSaving = (dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]);
+
+
+        addTerminalLine({ type: 'command', content: isSaving ? `Saving Changes...` : `Performing Full Sync...` });
+
+        try {
+            const currentFilesToSync = getLatestFiles();
+            const result = await runFullSync(false, currentFilesToSync);
+
+            if (result.success || result.errors) {
+                addTerminalLine({ type: 'success', content: isSaving ? 'Changes saved!' : 'Full Sync successful!' });
+                setFirstRunWorkspaces(prev => ({ ...prev, [activeWorkspace]: true }));
+                // Clear dirty file IDs since we've synced everything
+                setDirtyFileIds([]);
+            }
+        } catch (error: any) {
+            addTerminalLine({ type: 'error', content: isSaving ? `Save error: ${error.message}` : `Sync error: ${error.message}` });
         }
     };
 
-    const handleSyncWorkspace = async () => {
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: 'Syncing workspace from server...' }
-        ]);
+    const handleSyncWorkspace = useCallback(async () => {
+        addTerminalLineToInstance(activeTerminalId, { type: 'info', content: 'Syncing workspace from server...' });
 
         try {
+            // Save current open file paths and active file path before sync
+            const oldOpenFilePaths = openFileIds
+                .map(id => ({ id, path: getFilePath(files, id) }))
+                .filter(item => item.path !== null) as { id: string, path: string }[];
+
+            const activeFilePath = activeFileId ? getFilePath(files, activeFileId) : null;
+
             const serverFiles = await ClarityCompiler.getWorkspaceFiles(sessionId);
             if (Object.keys(serverFiles).length === 0) {
-                setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: 'No files found in server workspace.' }]);
+                addTerminalLineToInstance(activeTerminalId, { type: 'info', content: 'No files found in server workspace.' });
                 return;
             }
 
             const newFileNodes = filesToFileNodes(serverFiles, activeWorkspace);
 
-            // If the backend has a single root folder, it might need special handling
-            // but filesToFileNodes should handle the structure correctly
-
+            setWorkspaces(prev => ({ ...prev, [activeWorkspace]: newFileNodes }));
             addToHistory(newFileNodes);
-            setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'success', content: 'Workspace synced successfully!' }]);
+            addTerminalLineToInstance(activeTerminalId, { type: 'success', content: 'Workspace synced successfully!' });
 
-            // If active file was deleted on server, clear it
-            if (activeFileId) {
-                const stillExists = Object.keys(serverFiles).some(path => {
-                    const parts = path.split('/');
-                    const name = parts[parts.length - 1];
-                    const node = findFile(newFileNodes, activeFileId);
-                    return node !== null;
-                });
-                // Simple existence check might be hard with new IDs, 
-                // but let's at least try to keep the active file if possible
+            // Restore open files using new IDs matching the old paths
+            const newOpenFileIds: string[] = [];
+            oldOpenFilePaths.forEach(item => {
+                const newNode = findFileByPath(newFileNodes, item.path);
+                if (newNode) {
+                    newOpenFileIds.push(newNode.id);
+                }
+            });
+
+            setOpenFileIds(newOpenFileIds);
+
+            // Restore active file
+            if (activeFilePath) {
+                const newActiveNode = findFileByPath(newFileNodes, activeFilePath);
+                if (newActiveNode) {
+                    setActiveFileId(newActiveNode.id);
+                } else {
+                    // Active file no longer exists, try to pick first open file or null
+                    setActiveFileId(newOpenFileIds.length > 0 ? newOpenFileIds[0] : null);
+                }
             }
 
         } catch (error: any) {
@@ -1039,124 +1571,146 @@ function App() {
                 errorMessage = 'Sync failed: Server workspace not found. Please click "Check/Compile" button first to initialize the server environment.';
             }
 
-            setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'error', content: errorMessage }]);
+            addTerminalLineToInstance(activeTerminalId, { type: 'error', content: errorMessage });
         }
+    }, [activeTerminalId, activeFileId, openFileIds, files, activeWorkspace, sessionId, addTerminalLineToInstance, getFilePath]);
+
+
+
+    const socketRef = useRef<Socket | null>(null);
+
+    const activeTerminal = terminals.find(t => t.id === activeTerminalId) || terminals[0];
+
+    const handleSyncWorkspaceRef = useRef(handleSyncWorkspace);
+    const addTerminalLineToInstanceRef = useRef(addTerminalLineToInstance);
+
+    useEffect(() => {
+        handleSyncWorkspaceRef.current = handleSyncWorkspace;
+    }, [handleSyncWorkspace]);
+
+    useEffect(() => {
+        addTerminalLineToInstanceRef.current = addTerminalLineToInstance;
+    }, [addTerminalLineToInstance]);
+
+    // Initialize Socket.io
+    useEffect(() => {
+        const socketUrl = window.location.hostname === 'localhost'
+            ? 'http://localhost:5001'
+            : window.location.origin.replace('3000', '5001');
+
+        const socket = io(socketUrl);
+        socketRef.current = socket;
+
+        socket.on('connect', () => {
+            console.log('[Socket] Connected to backend');
+            // Room joining is handled by another useEffect
+            // that tracks terminal IDs and connection status
+        });
+
+        socket.on('terminal:output', ({ data, terminalId }: { data: string, terminalId: string }) => {
+            const lines = data.split('\n');
+            lines.forEach(content => {
+                if (content || data.includes('\n')) {
+                    addTerminalLineToInstanceRef.current(terminalId, { type: 'info', content });
+                }
+            });
+        });
+
+        socket.on('terminal:error', ({ message, terminalId }: { message: string, terminalId: string }) => {
+            addTerminalLineToInstanceRef.current(terminalId, { type: 'error', content: `Terminal Error: ${message}` });
+            setTerminals(prev => prev.map(t => t.id === terminalId ? { ...t, isProcessRunning: false } : t));
+        });
+
+        socket.on('terminal:exit', ({ code, terminalId }: { code: number, terminalId: string }) => {
+            addTerminalLineToInstanceRef.current(terminalId, { type: 'info', content: `Process exited with code ${code}` });
+            setTerminals(prev => prev.map(t => t.id === terminalId ? { ...t, isProcessRunning: false } : t));
+            handleSyncWorkspaceRef.current();
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [sessionId]); // Stable! Only reconnect if sessionId changes.
+
+    // Join terminal rooms for persistent output routing
+    useEffect(() => {
+        if (socketRef.current) {
+            terminals.forEach(t => {
+                socketRef.current?.emit('terminal:join', { sessionId, terminalId: t.id });
+            });
+        }
+    }, [terminals.length, sessionId]); // Join on new terminals or session change
+
+    const handleAddTerminal = (type: 'server' | 'webcontainer' = 'server') => {
+        const newId = `term_${Math.random().toString(36).substring(2, 9)}`;
+        setTerminals(prev => [
+            ...prev,
+            { id: newId, title: type === 'webcontainer' ? 'node' : 'clarinet', lines: [], isProcessRunning: false, type }
+        ]);
+        setActiveTerminalId(newId);
     };
 
-    const handleDebug = async () => {
-        if (!activeFileId) return;
-        const file = findFile(files, activeFileId);
-        if (!file || file.type !== 'file') return;
+    const handleRemoveTerminal = (id: string) => {
+        if (terminals.length <= 1) return;
 
-        const fileName = file.name;
+        // Kill process on backend if running
+        const term = terminals.find(t => t.id === id);
+        if (term?.isProcessRunning && socketRef.current) {
+            socketRef.current.emit('terminal:kill', { sessionId, terminalId: id });
+        }
 
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'command', content: `Starting debug session for: ${fileName}...` },
-        ]);
-
-        // Switch to debug view
-        setActiveView(ActivityView.DEBUG);
-        if (!isLeftSidebarVisible) toggleLeftSidebar();
-
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: 'Debugger initialized. You can now use the REPL or inspect state.' },
-        ]);
+        setTerminals(prev => {
+            const newTerminals = prev.filter(t => t.id !== id);
+            if (activeTerminalId === id) {
+                setActiveTerminalId(newTerminals[newTerminals.length - 1].id);
+            }
+            return newTerminals;
+        });
     };
 
     const handleTerminalCommand = async (command: string) => {
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'command', content: command },
-        ]);
+        if (!socketRef.current) return;
 
-        if (command.toLowerCase() === 'clear') {
-            handleClearTerminal();
+        const cmdLower = command.toLowerCase().trim();
+
+        addTerminalLineToInstance(activeTerminalId, {
+            type: 'command',
+            content: command,
+            prompt: activeTerminal.isProcessRunning ? '➜ ' : '➜ ~'
+        });
+
+        if (cmdLower === 'clear') {
+            setTerminals(prev => prev.map(t => t.id === activeTerminalId ? { ...t, lines: [] } : t));
+            return;
+        }
+
+        // Intercept docker-dependent commands
+        const dockerCommands = [
+            'clarinet integrate',
+            'clarinet devnet start',
+            'clarinet deployment apply --devnet'
+        ];
+
+        if (dockerCommands.some(dc => cmdLower.startsWith(dc))) {
+            addTerminalLineToInstance(activeTerminalId, {
+                type: 'error',
+                content: 'Docker is not currently available'
+            });
+            return;
+        }
+
+        if (activeTerminal.isProcessRunning) {
+            socketRef.current.emit('terminal:input', { input: command + '\n', sessionId, terminalId: activeTerminalId });
             return;
         }
 
         if (!command.startsWith('clarinet')) {
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'error', content: 'Only clarinet commands are allowed in this terminal.' },
-            ]);
+            addTerminalLineToInstance(activeTerminalId, { type: 'error', content: 'Only clarinet commands are allowed in this terminal.' });
             return;
         }
 
-        try {
-            // We use the same 'activeContract' context if available
-            let contractContext = null;
-            if (activeFileId) {
-                const file = findFile(files, activeFileId);
-                if (file && file.type === 'file' && file.name.endsWith('.clar')) {
-                    contractContext = { name: file.name, code: activeContent };
-                }
-            }
-
-            // The contract now implicitly exists in the auto-synced workspace
-            // so we can go straight to the terminal command
-
-            const response = await fetch('/ide-api/clarity/terminal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command, sessionId })
-            });
-
-            let result;
-            try {
-                const text = await response.text();
-                // Handle empty responses or Gateway Timeouts
-                if (!text) {
-                    setTerminalLines(prev => [
-                        ...prev,
-                        { id: Date.now().toString(), type: 'error', content: `Proxy or server returned an empty response (Status: ${response.status}). The backend might have crashed or timed out.` },
-                    ]);
-                    return;
-                }
-                result = JSON.parse(text);
-            } catch (err) {
-                setTerminalLines(prev => [
-                    ...prev,
-                    { id: Date.now().toString(), type: 'error', content: `Failed to parse response from server. Status: ${response.status}.` },
-                ]);
-                return;
-            }
-
-            if (result.output) {
-                const outputLines = result.output.split('\n');
-                outputLines.forEach((line: string) => {
-                    if (line.trim()) {
-                        setTerminalLines(prev => [
-                            ...prev,
-                            { id: Date.now().toString() + Math.random(), type: 'info', content: line },
-                        ]);
-                    }
-                });
-            }
-
-            if (!result.success && !result.output && !result.error) {
-                setTerminalLines(prev => [
-                    ...prev,
-                    { id: Date.now().toString(), type: 'error', content: 'Command failed.' },
-                ]);
-            } else if (result.error) {
-                setTerminalLines(prev => [
-                    ...prev,
-                    { id: Date.now().toString(), type: 'error', content: result.error },
-                ]);
-            }
-
-            // Automatically sync workspace after any Clarinet command
-            await handleSyncWorkspace();
-        } catch (error: any) {
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'error', content: `Execution error: ${error.message}` },
-            ]);
-            // Still try to sync in case partial changes were made
-            await handleSyncWorkspace();
-        }
+        setTerminals(prev => prev.map(t => t.id === activeTerminalId ? { ...t, isProcessRunning: true, title: command.split(' ')[1] || 'clarinet' } : t));
+        socketRef.current.emit('terminal:start', { command, sessionId, terminalId: activeTerminalId });
     };
 
     // --- Git Operations ---
@@ -1197,10 +1751,7 @@ function App() {
                 commits: [newCommit, ...prev.commits]
             };
         });
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Committed: ${message}` }
-        ]);
+        addTerminalLine({ type: 'success', content: `Committed: ${message}` });
     };
 
     const handleDiscardFile = (id: string) => {
@@ -1209,38 +1760,23 @@ function App() {
             modifiedFiles: prev.modifiedFiles.filter(f => f !== id),
             stagedFiles: prev.stagedFiles.filter(f => f !== id)
         }));
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: `Discarded changes in ${id}` }
-        ]);
+        addTerminalLine({ type: 'info', content: `Discarded changes in ${id}` });
     };
 
     const handleSwitchBranch = (branchName: string) => {
         setGitState(prev => ({ ...prev, branch: branchName }));
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: `Switched to branch: ${branchName}` }
-        ]);
+        addTerminalLine({ type: 'info', content: `Switched to branch: ${branchName}` });
     };
 
     const handleCreateBranch = (branchName: string) => {
         setGitState(prev => ({ ...prev, branch: branchName }));
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Created and switched to branch: ${branchName}` }
-        ]);
+        addTerminalLine({ type: 'success', content: `Created and switched to branch: ${branchName}` });
     };
 
     const handlePush = () => {
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: `Pushing to origin/${gitState.branch}...` }
-        ]);
+        addTerminalLine({ type: 'info', content: `Pushing to origin/${gitState.branch}...` });
         setTimeout(() => {
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'success', content: 'Push successful.' }
-            ]);
+            addTerminalLine({ type: 'success', content: 'Push successful.' });
         }, 1500);
     };
 
@@ -1251,18 +1787,18 @@ function App() {
 
     const handleWalletConnect = (newWallet: WalletConnection) => {
         setWallet(newWallet);
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Wallet connected: ${newWallet.type}` },
-        ]);
+        addTerminalLine({ type: 'success', content: `Wallet connected sucessfully` });
+
+        // Auto-sync global network settings with wallet network
+        if (newWallet.network && settings.network !== newWallet.network) {
+            handleUpdateSettings('network', newWallet.network);
+            addTerminalLine({ type: 'info', content: `IDE network synchronized to ${newWallet.network}` });
+        }
     };
 
     const handleWalletDisconnect = () => {
         setWallet({ type: 'none', connected: false });
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: 'Wallet disconnected' },
-        ]);
+        addTerminalLine({ type: 'info', content: 'Wallet disconnected' });
     };
 
     const handleDeploySuccess = (contract: DeployedContract) => {
@@ -1272,10 +1808,7 @@ function App() {
             ? contract.deployHash
             : Array.from(contract.deployHash as any).map((b: number) => b.toString(16).padStart(2, '0')).join('');
 
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Contract deployed: ${deployHashStr}` },
-        ]);
+        addTerminalLine({ type: 'success', content: `Contract deployed: ${deployHashStr}` });
 
         // Show notification
         setNotification({
@@ -1283,63 +1816,236 @@ function App() {
             network: contract.network,
             contractName: contract.name
         });
+
+        // Trigger confetti animation
+        confetti({
+            particleCount: 150,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#F97316', '#FB923C', '#FFF7ED', '#22C55E']
+        });
     };
 
-    const handleLoadTemplate = (templateNodes: FileNode[]) => {
+
+    const handleContractClick = (contract: DeployedContract) => {
+        const tabId = `@contract-${contract.id}`;
+        if (!openSpecialIds.includes(tabId)) {
+            setOpenSpecialIds(prev => [...prev, tabId]);
+        }
+        setActiveSpecialId(tabId);
+        setActiveTabGroup('special');
+    };
+
+    const handleTemplateSelect = (templateNodes: FileNode[], templateName?: string) => {
+        handleLoadTemplate(templateNodes, templateName);
+        handleTabClose('@new-project');
+    };
+
+    const handleLoadTemplate = (templateNodes: FileNode[], templateName: string = 'unknown') => {
         // Replace current files with template
         setHistory([templateNodes]);
         setHistoryIndex(0);
-        setOpenFiles([]);
+        setOpenFileIds([]);
         setActiveFileId(null);
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'info', content: 'Template loaded successfully' },
-        ]);
+        setActiveTabGroup('file');
+        setActiveSpecialId(null);
+        addTerminalLine({ type: 'info', content: `Template [${templateName}] loaded successfully` });
+
+        // Auto-sync template to backend
+        runFullSync(true, templateNodes);
+
+        // Telemetry Ingest
+        fetch('/ide-api/stats/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                eventType: 'TEMPLATE_LOAD',
+                wallet: wallet.address || 'unconnected',
+                payload: {
+                    templateName: templateName,
+                }
+            })
+        }).catch(err => console.error('Telemetry failed:', err));
     };
+
+    const handleInteracted = (contractName: string, entryPoint: string, network: string, metadata: any = {}) => {
+        // Telemetry Ingest
+        fetch('/ide-api/stats/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                eventType: 'CONTRACT_CALL',
+                wallet: wallet.address || 'unconnected',
+                payload: {
+                    contractName,
+                    entryPoint,
+                    network,
+                    metadata
+                }
+            })
+        }).catch(err => console.error('Telemetry failed:', err));
+    };
+
+
+    const handleOpenStats = () => {
+        if (!openSpecialIds.includes('@stats')) {
+            setOpenSpecialIds(prev => [...prev, '@stats']);
+        }
+        setActiveSpecialId('@stats');
+        setActiveTabGroup('special');
+    };
+
 
     // --- Tab Management ---
 
-    const handleFileOpen = (fileId: string) => {
-        if (!openFiles.includes(fileId)) {
-            setOpenFiles([...openFiles, fileId]);
+    const handleFileOpen = (fileId: string, line?: number, column?: number, highlight?: string) => {
+        if (!openFileIds.includes(fileId)) {
+            setOpenFileIds([...openFileIds, fileId]);
         }
         setActiveFileId(fileId);
+        setActiveTabGroup('file');
+
+        if (line) {
+            // Slight delay so Monaco mounts the new file before we jump
+            setTimeout(() => {
+                setEditorAction({ type: 'gotoLine', timestamp: Date.now(), line, column: column || 1 });
+            }, 80);
+        }
+
+        if (highlight) {
+            setSearchFindQuery(highlight);
+        }
     };
 
-    const handleTabClose = (fileId: string) => {
-        const filtered = openFiles.filter(id => id !== fileId);
-        setOpenFiles(filtered);
-
-        if (activeFileId === fileId) {
-            if (filtered.length > 0) {
-                setActiveFileId(filtered[filtered.length - 1]);
-            } else {
-                setActiveFileId(null);
+    const handleTabClose = (id: string) => {
+        if (id.startsWith('@')) {
+            const filtered = openSpecialIds.filter(sid => sid !== id);
+            setOpenSpecialIds(filtered);
+            if (activeSpecialId === id) {
+                if (filtered.length > 0) {
+                    setActiveSpecialId(filtered[filtered.length - 1]);
+                } else {
+                    setActiveSpecialId(null);
+                    if (openFileIds.length > 0) {
+                        setActiveTabGroup('file');
+                    } else {
+                        setActiveTabGroup('file');
+                    }
+                }
+            }
+        } else {
+            const filtered = openFileIds.filter(fid => fid !== id);
+            setOpenFileIds(filtered);
+            if (activeFileId === id) {
+                if (filtered.length > 0) {
+                    setActiveFileId(filtered[filtered.length - 1]);
+                } else {
+                    setActiveFileId(null);
+                    if (openSpecialIds.length > 0) {
+                        setActiveTabGroup('special');
+                    } else {
+                        setActiveTabGroup('file');
+                    }
+                }
             }
         }
     };
 
-    const handleCloseOthers = (fileId: string) => {
-        setOpenFiles([fileId]);
-        setActiveFileId(fileId);
+    const handleCloseOthers = (id: string) => {
+        if (id.startsWith('@')) {
+            setOpenSpecialIds([id]);
+            setActiveSpecialId(id);
+            setActiveTabGroup('special');
+        } else {
+            setOpenFileIds([id]);
+            setActiveFileId(id);
+            setActiveTabGroup('file');
+        }
     };
 
     const handleCloseAll = () => {
-        setOpenFiles([]);
+        setOpenFileIds([]);
+        setOpenSpecialIds([]);
         setActiveFileId(null);
+        setActiveSpecialId(null);
+        setActiveTabGroup('file');
     };
 
     // --- File System Operations ---
 
     const handleCreateNode = (parentId: string, type: 'file' | 'folder', name: string, initialContent?: string) => {
+        // Support path-based creation (e.g. "contracts/utils/helper.clar")
+        // When the AI suggests [CREATE_FILE: folder/subfolder/file.clar], we auto-create intermediate folders.
+        if (type === 'file' && (name.includes('/') || name.includes('\\'))) {
+            const parts = name.replace(/\\/g, '/').split('/');
+            const fileName = parts.pop()!;
+            const folderParts = parts;
+
+            const ensureFolders = (nodes: FileNode[], pathParts: string[]): { nodes: FileNode[], parentId: string } => {
+                if (pathParts.length === 0) return { nodes, parentId: 'root' };
+
+                const folderName = pathParts[0];
+                const remaining = pathParts.slice(1);
+                const existing = nodes.find(n => n.name === folderName && n.type === 'folder');
+
+                if (existing) {
+                    const result = ensureFolders(existing.children || [], remaining);
+                    return {
+                        nodes: nodes.map(n => n.id === existing.id ? { ...n, children: result.nodes, isOpen: true } : n),
+                        parentId: result.parentId === 'root' ? existing.id : result.parentId
+                    };
+                } else {
+                    const newFolderId = `${folderName}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                    const result = ensureFolders([], remaining);
+                    const newFolder: FileNode = {
+                        id: newFolderId, name: folderName, type: 'folder',
+                        children: result.nodes, isOpen: true
+                    };
+                    return {
+                        nodes: [...nodes, newFolder],
+                        parentId: result.parentId === 'root' ? newFolderId : result.parentId
+                    };
+                }
+            };
+
+            const newFileId = `${fileName}-${Date.now()}`;
+            const ext = fileName.split('.').pop()?.toLowerCase() || 'plaintext';
+            const lang = getLanguageFromExtension(ext);
+            const newFile: FileNode = {
+                id: newFileId, name: fileName, type: 'file',
+                language: lang, content: initialContent ?? ''
+            };
+
+            setHistory(prevHistory => {
+                const currentFiles = prevHistory[historyIndex];
+                const { nodes: updatedTree, parentId: targetFolderId } = ensureFolders(currentFiles, folderParts);
+
+                // Add file into the target folder
+                const insertFile = (nodes: FileNode[]): FileNode[] => {
+                    if (targetFolderId === 'root') return [...nodes, newFile];
+                    return nodes.map(n => {
+                        if (n.id === targetFolderId) return { ...n, children: [...(n.children || []), newFile] };
+                        if (n.children) return { ...n, children: insertFile(n.children) };
+                        return n;
+                    });
+                };
+                const finalFiles = insertFile(updatedTree);
+
+                setWorkspaces(prev => ({ ...prev, [activeWorkspace]: finalFiles }));
+                const newHist = prevHistory.slice(0, historyIndex + 1);
+                newHist.push(finalFiles);
+                return newHist;
+            });
+
+            setHistoryIndex(prev => prev + 1);
+            handleFileOpen(newFileId);
+            setGitState(prev => ({ ...prev, modifiedFiles: [...prev.modifiedFiles, newFileId] }));
+            return;
+        }
+
         const newId = `${name}-${Date.now()}`;
         const extension = name.split('.').pop()?.toLowerCase() || 'plaintext';
-        const language = (extension === 'clar' || extension === 'clarity') ? 'clarity'
-            : extension === 'sol' ? 'sol'
-                : extension === 'rs' ? 'rust'
-                    : extension === 'ts' ? 'typescript'
-                        : extension === 'js' ? 'javascript'
-                            : 'plaintext';
+        const language = getLanguageFromExtension(extension);
 
         const newNode: FileNode = {
             id: newId,
@@ -1351,25 +2057,43 @@ function App() {
             isOpen: type === 'folder' ? true : undefined
         };
 
-        let newFiles: FileNode[];
-        if (parentId === 'root') {
-            newFiles = [...files, newNode];
-        } else {
-            const addNodeRecursive = (nodes: FileNode[]): FileNode[] => {
-                return nodes.map(node => {
-                    if (node.id === parentId && node.type === 'folder') {
-                        return { ...node, children: [...(node.children || []), newNode], isOpen: true };
-                    }
-                    if (node.children) {
-                        return { ...node, children: addNodeRecursive(node.children) };
-                    }
-                    return node;
-                });
-            };
-            newFiles = addNodeRecursive(files);
-        }
+        // Use functional update to ensure we use the most recent history state
+        setHistory(prevHistory => {
+            const currentFiles = prevHistory[historyIndex];
+            let newFiles: FileNode[];
 
-        addToHistory(newFiles);
+            if (parentId === 'root') {
+                newFiles = [...currentFiles, newNode];
+            } else {
+                const addNodeRecursive = (nodes: FileNode[]): FileNode[] => {
+                    return nodes.map(node => {
+                        if (node.id === parentId && node.type === 'folder') {
+                            return { ...node, children: [...(node.children || []), newNode], isOpen: true };
+                        }
+                        if (node.children) {
+                            return { ...node, children: addNodeRecursive(node.children) };
+                        }
+                        return node;
+                    });
+                };
+                newFiles = addNodeRecursive(currentFiles);
+            }
+
+            // Sync with workspaces dictionary as well
+            setWorkspaces(prevWorkspaces => ({
+                ...prevWorkspaces,
+                [activeWorkspace]: newFiles
+            }));
+
+            const newHistory = prevHistory.slice(0, historyIndex + 1);
+            newHistory.push(newFiles);
+
+            // Note: historyIndex will be updated in setHistoryIndex below
+            return newHistory;
+        });
+
+        setHistoryIndex(prevIndex => prevIndex + 1);
+
         if (type === 'file') {
             handleFileOpen(newId);
             setGitState(prev => ({ ...prev, modifiedFiles: [...prev.modifiedFiles, newId] }));
@@ -1407,6 +2131,9 @@ function App() {
         };
         const newFiles = renameRecursive(files);
         addToHistory(newFiles);
+
+        // Auto-sync renamed state
+        runFullSync(true, newFiles);
     };
 
     const handleDeleteNode = (id: string) => {
@@ -1424,12 +2151,11 @@ function App() {
         const idsToDelete = getSubtreeIds(nodeToDelete);
 
         // 3. Close relevant tabs
-        const newOpenFiles = openFiles.filter(fileId => !idsToDelete.includes(fileId));
-        setOpenFiles(newOpenFiles);
+        setOpenFileIds(prev => prev.filter(fileId => !idsToDelete.includes(fileId)));
 
         // 4. Update active file if it was deleted
         if (activeFileId && idsToDelete.includes(activeFileId)) {
-            setActiveFileId(newOpenFiles.length > 0 ? newOpenFiles[newOpenFiles.length - 1] : null);
+            setActiveFileId(null); // Will be picked up by the next active tab check or simplified logic
         }
 
         // 5. Remove from tree
@@ -1453,6 +2179,122 @@ function App() {
             modifiedFiles: prev.modifiedFiles.filter(f => f !== id),
             stagedFiles: prev.stagedFiles.filter(f => f !== id)
         }));
+
+        // Auto-sync deleted state
+        runFullSync(true, newFiles);
+    };
+
+    const handleMoveNode = (nodeId: string, targetParentId: string) => {
+        if (nodeId === targetParentId) return;
+
+        const nodeToMove = findFile(files, nodeId);
+        if (!nodeToMove) return;
+
+        // Prevent moving a folder into its own descendant
+        if (nodeToMove.type === 'folder') {
+            const subtreeIds = getSubtreeIds(nodeToMove);
+            if (subtreeIds.includes(targetParentId)) {
+                addTerminalLine({ type: 'error', content: "Cannot move a folder into its own subfolder." });
+                return;
+            }
+        }
+
+        // 1. Remove from current position
+        const removeRecursive = (nodes: FileNode[]): FileNode[] => {
+            return nodes
+                .filter(node => node.id !== nodeId)
+                .map(node => ({
+                    ...node,
+                    children: node.children ? removeRecursive(node.children) : undefined
+                }));
+        };
+
+        // 2. Add to new position
+        const addRecursive = (nodes: FileNode[]): FileNode[] => {
+            if (targetParentId === 'root') {
+                return [...nodes, nodeToMove];
+            }
+            return nodes.map(node => {
+                if (node.id === targetParentId && node.type === 'folder') {
+                    return {
+                        ...node,
+                        children: [...(node.children || []), nodeToMove],
+                        isOpen: true
+                    };
+                }
+                if (node.children) {
+                    return { ...node, children: addRecursive(node.children) };
+                }
+                return node;
+            });
+        };
+
+        const intermediateFiles = removeRecursive(files);
+        const newFiles = addRecursive(intermediateFiles);
+
+        addToHistory(newFiles);
+        addTerminalLine({ type: 'info', content: `Moved ${nodeToMove.name} to ${targetParentId === 'root' ? 'root' : findFile(files, targetParentId)?.name}` });
+
+        // Auto-sync moved state
+        runFullSync(true, newFiles);
+    };
+
+    const handleExternalDrop = async (fileList: FileList, targetParentId: string = 'root') => {
+        const importedFileNames: string[] = [];
+        const newNodes: FileNode[] = [];
+
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            const content = await file.text();
+
+            const newNodeId = `${file.name}-${Date.now()}-${Math.random()}`;
+            const extension = file.name.split('.').pop()?.toLowerCase() || '';
+            const language = getLanguageFromExtension(extension);
+
+            const newNode: FileNode = {
+                id: newNodeId,
+                name: file.name,
+                type: 'file',
+                content,
+                language,
+            };
+
+            newNodes.push(newNode);
+            importedFileNames.push(file.name);
+
+            // Track git state for each new file
+            setGitState(prev => ({ ...prev, modifiedFiles: [...prev.modifiedFiles, newNodeId] }));
+        }
+
+        if (newNodes.length === 0) return;
+
+        const addNodesRecursive = (nodes: FileNode[]): FileNode[] => {
+            if (targetParentId === 'root') {
+                return [...nodes, ...newNodes];
+            }
+            return nodes.map(node => {
+                if (node.id === targetParentId && node.type === 'folder') {
+                    return { ...node, children: [...(node.children || []), ...newNodes], isOpen: true };
+                }
+                if (node.children) {
+                    return { ...node, children: addNodesRecursive(node.children) };
+                }
+                return node;
+            });
+        };
+
+        const newFiles = addNodesRecursive(files);
+        addToHistory(newFiles);
+
+        addTerminalLine({ type: 'success', content: `Imported ${importedFileNames.length} file(s): ${importedFileNames.join(', ')}` });
+
+        // Auto-sync imported files
+        runFullSync(true, newFiles);
+
+        // Open the first imported file
+        if (newNodes.length > 0) {
+            handleFileOpen(newNodes[0].id);
+        }
     };
 
     // --- GitHub Integration ---
@@ -1503,20 +2345,179 @@ function App() {
         if (fileNodes.length > 0) {
             setHistory([fileNodes]);
             setHistoryIndex(0);
-            setOpenFiles([]);
+            setOpenFileIds([]);
             setActiveFileId(null);
-            setTerminalLines(prev => [
-                ...prev,
-                { id: Date.now().toString(), type: 'success', content: `Cloned repository: ${repoName}` }
-            ]);
+            addTerminalLine({ type: 'success', content: `Cloned repository: ${repoName}` });
+
+            // Auto-sync cloned repo to backend
+            runFullSync(true, fileNodes);
+        }
+    };
+
+    const handleDiscoveryImport = async (type: DiscoveryImportType, value: string, network: StacksNetworkType = 'mainnet', selectedContracts?: string[]) => {
+        addTerminalLine({ type: 'command', content: `Importing from ${type.toUpperCase()} on ${network.toUpperCase()}: ${value}` });
+        setDiscoveryProgress(5);
+
+        try {
+            let filesToAdd: Record<string, string> = { ...{} };
+            const baseUrl = network === 'mainnet' ? 'https://api.mainnet.hiro.so' : 'https://api.testnet.hiro.so';
+
+            // Helper to fetch source by contract ID
+            const fetchSource = async (contractId: string): Promise<{ name: string, source: string } | null> => {
+                const [addr, name] = contractId.split('.');
+                if (!addr || !name) return null;
+                const resp = await fetch(`${baseUrl}/v2/contracts/source/${addr}/${name}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    return { name, source: data.source };
+                }
+                return null;
+            };
+
+            switch (type) {
+                case 'txid': {
+                    addTerminalLine({ type: 'info', content: `Fetching transaction data from ${network} Hiro API...` });
+                    const resp = await fetch(`${baseUrl}/extended/v1/tx/${value}`);
+                    setDiscoveryProgress(30);
+                    if (!resp.ok) throw new Error(`Hiro API error: ${resp.status} ${resp.statusText}`);
+                    const tx = await resp.json();
+
+                    let contractId = '';
+                    if (tx.tx_type === 'smart_contract') {
+                        contractId = tx.smart_contract.contract_id;
+                    } else if (tx.tx_type === 'contract_call') {
+                        contractId = tx.contract_call.contract_id;
+                    }
+
+                    if (contractId) {
+                        setDiscoveryProgress(60);
+                        addTerminalLine({ type: 'info', content: `Transaction involves contract ${contractId}. Fetching source...` });
+                        const res = await fetchSource(contractId);
+                        setDiscoveryProgress(90);
+                        if (res) {
+                            filesToAdd[`${res.name}.clar`] = res.source;
+                        } else {
+                            throw new Error(`Failed to fetch source for ${contractId}`);
+                        }
+                    } else {
+                        throw new Error(`This transaction type (${tx.tx_type}) does not contain a direct contract reference.`);
+                    }
+                    break;
+                }
+                case 'contract_id': {
+                    setDiscoveryProgress(40);
+                    const res = await fetchSource(value);
+                    setDiscoveryProgress(90);
+                    if (!res) throw new Error(`Contract not found on ${network}`);
+                    filesToAdd[`${res.name}.clar`] = res.source;
+                    break;
+                }
+                case 'wallet': {
+                    let contractArray: string[] = [];
+
+                    if (selectedContracts && selectedContracts.length > 0) {
+                        contractArray = selectedContracts;
+                    } else {
+                        addTerminalLine({ type: 'info', content: `Searching for contracts associated with ${value} on ${network}...` });
+                        const resp = await fetch(`${baseUrl}/extended/v1/address/${value}/transactions?limit=50`);
+                        setDiscoveryProgress(20);
+                        if (!resp.ok) throw new Error(`Hiro API error: ${resp.statusText}`);
+                        const data = await resp.json();
+
+                        const contractIds = new Set<string>();
+                        (data.results || []).forEach((tx: any) => {
+                            if (tx.tx_type === 'smart_contract') contractIds.add(tx.smart_contract.contract_id);
+                            if (tx.tx_type === 'contract_call') contractIds.add(tx.contract_call.contract_id);
+                        });
+
+                        if (contractIds.size === 0) throw new Error('No contract activity found for this address.');
+                        contractArray = Array.from(contractIds);
+                    }
+
+                    setDiscoveryProgress(30);
+                    addTerminalLine({ type: 'info', content: `Importing ${contractArray.length} unique contracts...` });
+
+                    // Fetch sources with small delay to avoid rate limiting
+                    for (let i = 0; i < contractArray.length; i++) {
+                        const cId = contractArray[i];
+                        const res = await fetchSource(cId);
+                        if (res && res.source) {
+                            filesToAdd[`${res.name}.clar`] = res.source;
+                            addTerminalLine({ type: 'info', content: `(${i + 1}/${contractArray.length}) Imported ${cId}` });
+                        }
+                        const progress = 30 + ((i + 1) / contractArray.length) * 65;
+                        setDiscoveryProgress(progress);
+                        // Minor delay if many contracts
+                        if (contractArray.length > 5) await new Promise(r => setTimeout(r, 100));
+                    }
+                    break;
+                }
+                case 'ipfs': {
+                    addTerminalLine({ type: 'info', content: `Fetching from IPFS gateway...` });
+                    setDiscoveryProgress(30);
+                    const resp = await fetch(`https://ipfs.io/ipfs/${value}`);
+                    setDiscoveryProgress(80);
+                    if (!resp.ok) throw new Error(`IPFS gateway error: ${resp.statusText}`);
+                    const text = await resp.text();
+                    filesToAdd[`ipfs-${value.substring(0, 6)}.clar`] = text;
+                    setDiscoveryProgress(95);
+                    break;
+                }
+                case 'https': {
+                    addTerminalLine({ type: 'info', content: `Fetching from ${value}...` });
+                    setDiscoveryProgress(30);
+                    const resp = await fetch(value);
+                    setDiscoveryProgress(80);
+                    if (!resp.ok) throw new Error(`HTTP error: ${resp.statusText}`);
+                    const text = await resp.text();
+                    const fileName = value.split('/').pop()?.split('?')[0] || `downloaded-${Date.now()}.txt`;
+                    filesToAdd[fileName] = text;
+                    setDiscoveryProgress(95);
+                    break;
+                }
+            }
+
+            if (Object.keys(filesToAdd).length > 0) {
+                setDiscoveryProgress(100);
+                // Add files to current workspace
+                const newFiles = [...files];
+                for (const [path, content] of Object.entries(filesToAdd)) {
+                    if (!content) continue; // Skip empty files
+                    const newNode: FileNode = {
+                        id: `import-${Date.now()}-${Math.random()}`,
+                        name: path,
+                        type: 'file',
+                        content,
+                        language: getLanguageFromExtension(path.split('.').pop() || '')
+                    };
+                    newFiles.push(newNode);
+                }
+                addToHistory(newFiles);
+                addTerminalLine({ type: 'success', content: `Successfully imported ${Object.keys(filesToAdd).length} file(s) from ${type}` });
+
+                // Trigger workspace sync
+                runFullSync(true, newFiles);
+            } else {
+                addTerminalLine({ type: 'info', content: 'No files were imported.' });
+            }
+        } catch (err: any) {
+            const errorMsg = err.message || err.msg || (typeof err === 'string' ? err : 'Unknown error');
+            if (err.type !== 'cancelation') {
+                addTerminalLine({ type: 'error', content: `Import failed: ${errorMsg}` });
+            }
+            // If it's a cancellation, we don't necessarily want to spam the terminal or re-throw as uncaught
+            if (err.type === 'cancelation') {
+                console.log('[Discovery] Operation cancelled.');
+            } else {
+                throw err;
+            }
+        } finally {
+            setTimeout(() => setDiscoveryProgress(0), 1000);
         }
     };
 
     const handleGitHubGistCreated = (url: string) => {
-        setTerminalLines(prev => [
-            ...prev,
-            { id: Date.now().toString(), type: 'success', content: `Gist created: ${url}` }
-        ]);
+        addTerminalLine({ type: 'success', content: `Gist created: ${url}` });
     };
 
     // Collect all file contents for gist
@@ -1540,10 +2541,11 @@ function App() {
     };
 
     const handleOpenHome = () => {
-        if (!openFiles.includes('@home')) {
-            setOpenFiles(['@home', ...openFiles]);
+        if (!openSpecialIds.includes('@home')) {
+            setOpenSpecialIds(['@home', ...openSpecialIds]);
         }
-        setActiveFileId('@home');
+        setActiveSpecialId('@home');
+        setActiveTabGroup('special');
     };
 
     const handleOpenPreview = () => {
@@ -1554,17 +2556,34 @@ function App() {
         const isClar = file.name.endsWith('.clar') || file.name.endsWith('.clarity');
         if (!isMd && !isClar) return;
         const tabId = isMd ? `@md-${activeFileId}` : `@abi-${activeFileId}`;
-        if (!openFiles.includes(tabId)) {
-            setOpenFiles(prev => [...prev, tabId]);
+        if (!openSpecialIds.includes(tabId)) {
+            setOpenSpecialIds(prev => [...prev, tabId]);
         }
-        setActiveFileId(tabId);
+        setActiveSpecialId(tabId);
+        setActiveTabGroup('special');
     };
 
     const handleOpenChangelog = () => {
-        if (!openFiles.includes('@changelog')) {
-            setOpenFiles(['@changelog', ...openFiles]);
+        if (!openSpecialIds.includes('@changelog')) {
+            setOpenSpecialIds(['@changelog', ...openSpecialIds]);
         }
-        setActiveFileId('@changelog');
+        setActiveSpecialId('@changelog');
+        setActiveTabGroup('special');
+    };
+
+    const handleOpenStxerDebugger = (txId?: string) => {
+        const url = txId
+            ? `https://stxer.xyz/tx/testnet/${txId}/debugger?trace=&filter=all`
+            : `https://stxer.xyz/`;
+        window.open(url, '_blank');
+    };
+
+    const handleOpenAccountSettings = () => {
+        if (!openSpecialIds.includes('@account')) {
+            setOpenSpecialIds(prev => [...prev, '@account']);
+        }
+        setActiveSpecialId('@account');
+        setActiveTabGroup('special');
     };
 
     // Determines if the Preview button should be enabled
@@ -1590,6 +2609,8 @@ function App() {
                 onRenameWorkspace={handleRenameWorkspace}
                 onDownloadWorkspace={handleDownloadWorkspace}
                 onImportWorkspace={handleImportWorkspace}
+                onDeleteWorkspace={handleDeleteWorkspace}
+                onCloneWorkspace={handleCloneWorkspace}
                 theme={theme}
                 toggleTheme={toggleTheme}
                 isLeftSidebarVisible={isLeftSidebarVisible}
@@ -1602,6 +2623,8 @@ function App() {
                 onGitHubGistCreated={handleGitHubGistCreated}
                 workspaceFiles={collectWorkspaceFiles()}
                 onSync={handleSyncWorkspace}
+                aiStats={aiStats}
+                onOpenAccountSettings={handleOpenAccountSettings}
             />
 
             {/* Main Workspace */}
@@ -1612,7 +2635,10 @@ function App() {
                     isSidebarVisible={isLeftSidebarVisible}
                     onToggleSidebar={toggleLeftSidebar}
                     onOpenHome={handleOpenHome}
+                    onOpenAccountSettings={handleOpenAccountSettings}
+                    onOpenStats={handleOpenStats}
                 />
+
 
                 {isLeftSidebarVisible && (
                     <>
@@ -1641,15 +2667,22 @@ function App() {
                             compilationResult={compilationResult}
                             onDeploySuccess={handleDeploySuccess}
                             onLoadTemplate={handleLoadTemplate}
+                            onInteracted={handleInteracted}
                             onCreateBlank={handleCreateWorkspace}
                             onImport={handleImportWorkspace}
-                            isProjectModalOpen={isProjectModalOpen}
-                            setIsProjectModalOpen={setIsProjectModalOpen}
-                            onAddTerminalLine={addTerminalLine}
+                            onDiscoveryImport={handleDiscoveryImport}
+                            discoveryProgress={discoveryProgress}
                             theme={theme}
-                            onUpdateFiles={addToHistory}
+                            onAddTerminalLine={addTerminalLine}
+                            onOpenNewProject={handleOpenNewProject}
                             sessionId={sessionId}
+                            onUpdateFiles={addToHistory}
                             onCollapseAll={handleCollapseAll}
+                            onMoveNode={handleMoveNode}
+                            onExternalDrop={handleExternalDrop}
+                            deployedContracts={deployedContracts}
+                            setDeployedContracts={setDeployedContracts}
+                            onContractClick={handleContractClick}
                         />
                         {/* Left Resizer */}
                         <div
@@ -1661,180 +2694,174 @@ function App() {
 
                 <div className="flex-1 flex flex-col min-w-0 bg-caspier-dark">
                     {/* Editor Tabs & Header */}
-                    <EditorTabs
-                        files={files}
-                        openFileIds={openFiles}
-                        activeFileId={activeFileId}
-                        onSelect={setActiveFileId}
-                        onClose={handleTabClose}
-                        onCloseOthers={handleCloseOthers}
-                        onCloseAll={handleCloseAll}
-                        onReorder={setOpenFiles}
-                        modifiedFileIds={gitState.modifiedFiles}
-                        dirtyFileIds={dirtyFileIds}
-                    />
-
-                    <div className="h-9 flex items-center bg-caspier-black rounded-b-lg border-b border-x border-caspier-border px-4 flex-shrink-0">
-                        <div className="flex w-full items-center text-sm">
-                            <span className="text-caspier-muted text-xs mr-2">{activeFileId ? findFile(files, activeFileId)?.name : ''}</span>
-                        </div>
-
-                        {/* Inline Search Box */}
-                        <div className="flex items-center relative mr-2">
-                            <SearchIcon className="absolute left-2 w-3 h-3 text-caspier-muted pointer-events-none" />
-                            <input
-                                type="text"
-                                id="editor-search-input"
-                                value={editorSearchQuery}
-                                onChange={e => handleSearchChange(e.target.value)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Escape') handleSearchChange('');
+                    <div className="flex flex-col flex-shrink-0">
+                        {openSpecialIds.length > 0 && (
+                            <EditorTabs
+                                files={files}
+                                openFileIds={openSpecialIds}
+                                activeFileId={activeTabGroup === 'special' ? activeSpecialId : null}
+                                onSelect={(id) => {
+                                    setActiveSpecialId(id);
+                                    setActiveTabGroup('special');
                                 }}
-                                placeholder="Find in code…"
-                                className="h-6 pl-6 pr-6 text-xs rounded bg-caspier-dark border border-caspier-border text-caspier-text placeholder-caspier-muted focus:outline-none focus:border-labstx-orange transition-all w-32 focus:w-48"
-                                style={{ transition: 'width 0.2s ease' }}
-                                title="Find in editor (Ctrl+F)"
+                                onClose={handleTabClose}
+                                onCloseOthers={handleCloseOthers}
+                                onCloseAll={handleCloseAll}
+                                onReorder={setOpenSpecialIds}
+                                modifiedFileIds={[]}
+                                dirtyFileIds={[]}
                             />
-                            {editorSearchQuery && (
-                                <button
-                                    onClick={() => handleSearchChange('')}
-                                    className="absolute right-1.5 text-caspier-muted hover:text-caspier-text leading-none text-base"
-                                    title="Clear search"
-                                >×</button>
-                            )}
-                        </div>
-
-                        <div className="flex w-auto items-center gap-2">
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={handleOpenPreview}
-                                disabled={!previewableFile}
-                                className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={previewableFile
-                                    ? previewableFile.name.endsWith('.md') || previewableFile.name.endsWith('.mdx') || previewableFile.name.endsWith('.markdown')
-                                        ? 'Markdown Preview'
-                                        : 'ABI Contract Specification'
-                                    : 'Open a .clar or .md file to preview'
-                                }
-                            >
-                                <EyeIcon className="w-3 h-3" />
-                                <span>Preview</span>
-                            </Button>
-                            <Button
-                                id="check-button"
-                                variant="primary"
-                                size="sm"
-                                onClick={handleCompile}
-                                className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                                title="Run Clarinet Check (F5)"
-                            >
-                                <PlayIcon className="w-3 h-3" />
-                                <span>Compile</span>
-                            </Button>
-                            <Button
-                                id="debug-button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={handleDebug}
-                                className="rounded-full  flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                                title="Debug Clarity"
-                            >
-                                <BugIcon className="w-3 h-3" />
-                                <span>Debug</span>
-                            </Button>
-                            <Button
-                                id="deploy-button"
-                                variant="primary"
-                                size="sm"
-                                onClick={handleDeployView}
-                                className="rounded-full  flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                            >
-                                <RocketIcon className="w-3 h-3" />
-                                <span>Deploy</span>
-                            </Button>
-                            <button
-                                id="ai-assistant-button"
-                                onClick={toggleRightSidebar}
-                                className="text-caspier-muted hover:text-caspier-text p-1 ml-2 border border-transparent hover:border-caspier-border rounded"
-                                title="Open AI Assistant"
-                            >
-                                <BotIcon className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        <div className="flex w-fit items-center gap-1.5 px-2 border-l border-caspier-border ml-2">
-
-                            <button
-                                onClick={handleSaveFile}
-                                disabled={!activeFileId || !dirtyFileIds.includes(activeFileId)}
-                                className={`p-1.5 rounded transition-all ${activeFileId && dirtyFileIds.includes(activeFileId)
-                                    ? 'text-labstx-orange hover:bg-labstx-orange/10 bg-labstx-orange/5'
-                                    : 'text-caspier-muted opacity-50 cursor-not-allowed'
-                                    }`}
-                                title="Save File (Ctrl+S)"
-                            >
-                                <SaveIcon className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                        )}
+                        <EditorTabs
+                            files={files}
+                            openFileIds={openFileIds}
+                            activeFileId={activeTabGroup === 'file' ? activeFileId : null}
+                            onSelect={(id) => {
+                                setActiveFileId(id);
+                                setActiveTabGroup('file');
+                            }}
+                            onClose={handleTabClose}
+                            onCloseOthers={handleCloseOthers}
+                            onCloseAll={handleCloseAll}
+                            onReorder={setOpenFileIds}
+                            modifiedFileIds={gitState.modifiedFiles}
+                            dirtyFileIds={dirtyFileIds}
+                        />
                     </div>
+                    {activeTabGroup === 'file' && activeFileId && (
+                        <div className="h-9 flex items-center bg-caspier-black rounded-b-lg border-b border-x border-caspier-border px-4 flex-shrink-0">
+                            <div className="flex w-full items-center text-sm">
+                                <span className="text-caspier-muted text-xs mr-2">{activeFileId ? findFile(files, activeFileId)?.name : ''}</span>
+                            </div>
 
-                    {/* Monaco Editor or Home Tab or ABI Preview */}
+                            {/* Inline Search Box */}
+                            <div className="flex items-center relative mr-2">
+                                <SearchIcon className="absolute left-2 w-3 h-3 text-caspier-muted pointer-events-none" />
+                                <input
+                                    type="text"
+                                    id="editor-search-input"
+                                    value={editorSearchQuery}
+                                    onChange={e => handleSearchChange(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Escape') handleSearchChange('');
+                                    }}
+                                    placeholder="Find in code…"
+                                    className="h-6 pl-6 pr-6 text-xs rounded bg-caspier-dark border border-caspier-border text-caspier-text placeholder-caspier-muted focus:outline-none focus:border-labstx-orange transition-all w-32 focus:w-48"
+                                    style={{ transition: 'width 0.2s ease' }}
+                                    title="Find in editor (Ctrl+F)"
+                                />
+                                {editorSearchQuery && (
+                                    <button
+                                        onClick={() => handleSearchChange('')}
+                                        className="absolute right-1.5 text-caspier-muted hover:text-caspier-text leading-none text-base"
+                                        title="Clear search"
+                                    >×</button>
+                                )}
+                            </div>
+
+                            <div className="flex w-auto items-center gap-2">
+                                <Button
+                                    id="preview-button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleOpenPreview}
+                                    disabled={!previewableFile}
+                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={previewableFile
+                                        ? previewableFile.name.endsWith('.md') || previewableFile.name.endsWith('.mdx') || previewableFile.name.endsWith('.markdown')
+                                            ? 'Markdown Preview'
+                                            : 'ABI Contract Specification'
+                                        : 'Open a .clar or .md file to preview'
+                                    }
+                                >
+                                    <EyeIcon className="w-3 h-3" />
+                                    <span>Preview</span>
+                                </Button>
+                                <Button
+                                    id="check-button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleCompile}
+                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                    title="Run Clarinet Check (F5)"
+                                >
+                                    <PlayIcon className="w-3 h-3" />
+                                    <span>Compile</span>
+                                </Button>
+
+                                <Button
+                                    id="sync-button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleFullSync}
+                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                    title="Perform Full Sync for maximum reliability"
+                                >
+                                    {(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? <SaveIcon className="w-3 h-3" /> : <RefreshIcon className="w-3 h-3" />}
+                                    <span>{(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? "Save" : "Sync"}</span>
+                                </Button>
+
+                                <Button
+                                    id="deploy-button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleDeployView}
+                                    className="rounded-full  flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                >
+                                    <RocketIcon className="w-3 h-3" />
+                                    <span>Deploy</span>
+                                </Button>
+                            </div>
+                        </div>
+                    )
+                    }
+                    {/* Monaco Editor or Special Tab — all always mounted, toggled via display */}
                     <div className="flex-1 relative min-h-0">
-                        {activeFileId === '@home' ? (
-                            <HomeTab
+                        {/* Special Tab layer */}
+                        <div
+                            style={{ display: activeTabGroup === 'special' ? 'block' : 'none' }}
+                            className="absolute inset-0 overflow-auto"
+                        >
+                            <SpecialTab
+                                activeSpecialId={activeSpecialId}
+                                files={files}
+                                theme={theme}
+                                wallet={wallet}
+                                deployedContracts={deployedContracts}
+                                changelogContent={CHANGELOG_CONTENT}
                                 onCreateFile={() => handleCreateNode('root', 'file', `contract-${Date.now()}.clar`)}
+                                onCreateFolder={() => {
+                                    const name = window.prompt("Enter folder name:", "new-folder");
+                                    if (name) handleCreateNode('root', 'folder', name);
+                                }}
+                                onCreateWorkspace={handleCreateWorkspace}
                                 onImportWorkspace={handleImportWorkspace}
                                 onSelectWalkthrough={(id) => {
-                                    setTerminalLines(prev => [...prev, { id: Date.now().toString(), type: 'info', content: `Starting walkthrough: ${id}` }]);
-                                    // Could implement more logic here
+                                    addTerminalLine({ type: 'info', content: `Starting walkthrough: ${id}` });
                                 }}
                                 onClone={() => {
                                     const modal = document.getElementById('public-clone-modal');
                                     if (modal) modal.style.display = 'flex';
                                 }}
-                                theme={theme}
+                                findFile={findFile}
+                                onSelectView={setActiveView}
+                                onSelectWorkspace={handleSwitchWorkspace}
+                                workspaceMetadata={workspaceMetadata}
+                                workspaceNames={Object.keys(workspaces)}
+                                onLoadTemplate={handleTemplateSelect}
+                                onCloseTab={handleTabClose}
+                                onOpenStats={handleOpenStats}
+                                onQuotaReached={setIsAiQuotaReached}
+                                onConnectWallet={handleConnectWallet}
                             />
-                        ) : activeFileId?.startsWith('@abi-') ? (() => {
-                            const srcFileId = activeFileId.replace(/^@abi-/, '');
-                            const srcFile = findFile(files, srcFileId);
-                            return (
-                                <AbiPreviewTab
-                                    code={srcFile?.content || ''}
-                                    fileName={srcFile?.name || 'contract.clar'}
-                                    theme={theme}
-                                />
-                            );
-                        })() : activeFileId === '@changelog' ? (
-                            <MarkdownPreviewTab
-                                content={CHANGELOG_CONTENT}
-                                fileName="CHANGELOG.md"
-                                theme={theme}
-                            />
-                        ) : activeFileId?.startsWith('@md-') ? (() => {
-                            const srcFileId = activeFileId.replace(/^@md-/, '');
-                            const srcFile = findFile(files, srcFileId);
-                            return (
-                                <MarkdownPreviewTab
-                                    content={srcFile?.content || ''}
-                                    fileName={srcFile?.name || 'document.md'}
-                                    theme={theme}
-                                />
-                            );
-                        })() : !activeFileId ? (
-                            <EmptyState
-                                onCreateFile={() => handleCreateNode('root', 'file', `contract-${Date.now()}.clar`)}
-                                onOpenProject={() => setIsProjectModalOpen(true)}
-                                onToggleSearch={() => {
-                                    const input = document.getElementById('editor-search-input');
-                                    if (input) input.focus();
-                                }}
-                                onToggleCommandPalette={() => {
-                                    // Could trigger a command palette if implemented
-                                }}
-                                theme={theme}
-                            />
-                        ) : (
+
+                        </div>
+
+                        {/* Code Editor layer — always mounted so Monaco stays alive */}
+                        <div
+                            style={{ display: (activeTabGroup === 'file' && activeFileId) ? 'block' : 'none' }}
+                            className="absolute inset-0"
+                        >
                             <CodeEditor
                                 code={activeContent}
                                 language={activeLanguage}
@@ -1848,10 +2875,57 @@ function App() {
                                 lineEnding={lineEnding}
                                 onCursorChange={handleCursorChange}
                                 activeFileId={activeFileId}
+                                onFileDrop={(files) => handleExternalDrop(files, 'root')}
                             />
-                        )}
+                        </div>
+
+                        {/* Empty State layer */}
+                        <div
+                            style={{ display: (activeTabGroup === 'file' && !activeFileId) ? 'flex' : 'none' }}
+                            className="absolute inset-0 items-center justify-center"
+                        >
+                            <EmptyState
+                                onCreateFile={() => handleCreateNode('root', 'file', `contract-${Date.now()}.clar`)}
+                                onOpenProject={handleOpenNewProject}
+                                onToggleSearch={() => {
+                                    const input = document.getElementById('editor-search-input');
+                                    if (input) input.focus();
+                                }}
+                                onToggleCommandPalette={() => {
+                                    // Could trigger a command palette if implemented
+                                }}
+                                theme={theme}
+                            />
+                        </div>
                     </div>
 
+                    <div
+                        className='bg-caspier-black'
+                        style={{
+                            display: (activeTabGroup === 'file' && activeFileId) ? 'flex' : 'none',
+
+                        }}
+                    >
+                        <button
+                            className='flex gap-2 text-sm items-center px-3 py-1 bg-blue-600/80 text-white hover:bg-blue-800 border-t-2 border-t-transparent'
+                            onClick={handleExplainCode}>
+                            <MessageSquareIcon className="w-3.5 h-3.5" />
+                            Explain Code with AI
+                        </button>
+
+                        <button
+                            className='flex gap-2 text-sm items-center px-3 py-1  bg-yellow-600/80 text-white hover:bg-yellow-800 border-t-2 border-t-transparent'
+                            onClick={handleAnalyseCode}>
+                            <AnalyseIcon className="w-3.5 h-3.5" />
+                            Analyse Code with AI
+                        </button>
+                        <button
+                            className='flex gap-2 text-sm items-center px-3 py-1 bg-red-600/80 text-white hover:bg-red-800 border-t-2 border-t-transparent'
+                            onClick={handleDebugCode}>
+                            <BugIcon className="w-3.5 h-3.5" />
+                            Debug Code with AI
+                        </button>
+                    </div>
                     {isTerminalVisible && (
                         <>
                             {/* Terminal Resizer */}
@@ -1860,14 +2934,20 @@ function App() {
                                 onMouseDown={startTerminalResizing}
                             />
                             <TerminalPanel
-                                terminalLines={terminalLines}
+                                terminals={terminals}
+                                activeTerminalId={activeTerminalId}
+                                onAddTerminal={handleAddTerminal}
+                                onRemoveTerminal={handleRemoveTerminal}
+                                onSwitchTerminal={setActiveTerminalId}
                                 outputLines={outputLines}
                                 problems={problems}
                                 height={terminalHeight}
                                 theme={theme}
-                                onClearTerminal={handleClearTerminal}
+                                onClearTerminal={() => setTerminals(prev => prev.map(t => t.id === activeTerminalId ? { ...t, lines: [] } : t))}
                                 onCommand={handleTerminalCommand}
                                 onLocateProblem={handleLocateProblem}
+                                onOpenStxerDebugger={handleOpenStxerDebugger}
+                                onAskAI={handleAskAIFix}
                             />
                         </>
                     )}
@@ -1881,22 +2961,35 @@ function App() {
                             onMouseDown={startResizing('right')}
                         />
                         <SidebarRight
+                            ref={sidebarRightRef}
                             currentCode={activeContent}
                             files={files}
+                            activeFileName={activeFileId ? findFile(files, activeFileId)?.name : undefined}
                             width={rightWidth}
                             settings={settings}
-                            onClose={toggleRightSidebar}
-                            onUpdateFile={handleUpdateFileContent}
+                            onClose={() => setIsRightSidebarVisible(false)}
+                            onUpdateFile={(fileId, content) => {
+                                const file = findFile(files, fileId);
+                                if (file) {
+                                    handleUpdateFileContent(fileId, content);
+                                }
+                            }}
                             onCreateFile={(name, content) => handleCreateNode('root', 'file', name, content)}
+                            theme={theme}
+                            wallet={wallet}
+                            isQuotaExceeded={isAiQuotaReached}
+                            onOpenAccountSettings={handleOpenAccountSettings}
+                            onInteraction={handleCheckAiQuota}
+                            onConnectWallet={handleConnectWallet}
                         />
                     </>
                 )}
             </div>
 
             {/* Status Bar */}
-            <div className="h-6 bg-labstx-orange text-white flex justify-between items-center px-3 text-xs font-bold select-none flex-shrink-0">
+            <div id="status-bar" className="h-6 bg-labstx-orange text-white flex justify-between items-center px-3 text-xs font-bold select-none flex-shrink-0">
                 <div className="flex gap-4">
-                    <span>{gitState.branch}*</span>
+                    <span className=' hidden'>{gitState.branch}*</span>
                     <span>{problems.length} problems</span>
                 </div>
                 <div className="flex gap-4">
@@ -1976,6 +3069,9 @@ function App() {
                     onClose={() => setNotification(null)}
                 />
             )}
+
+            {/* Intro Loading Page */}
+            {loading && <IntroLoading theme={theme} onComplete={() => setLoading(false)} />}
         </div>
     );
 }

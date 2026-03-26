@@ -25,5 +25,6 @@ telemetry = false
 requirements = []
 [contracts.counter]
 path = "contracts/counter.clar"
-clarity_version = 2`
+clarity_version = 3
+epoch = 'latest'`
 };

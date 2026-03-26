@@ -47,7 +47,8 @@ export class ClarityCompiler {
     static async updateWorkspace(
         sessionId: string,
         changedFiles: Record<string, string>,
-        deletedPaths?: string[]
+        deletedPaths?: string[],
+        renames?: { from: string, to: string }[]
     ): Promise<CompilationResult> {
         try {
             console.log(`[Compiler] Updating workspace via delta sync...`);
@@ -55,7 +56,7 @@ export class ClarityCompiler {
             const response = await fetch('/ide-api/project/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, changedFiles, deletedPaths })
+                body: JSON.stringify({ sessionId, changedFiles, deletedPaths, renames })
             });
 
             if (!response.ok) {
