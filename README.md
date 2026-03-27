@@ -10,6 +10,17 @@ LabSTX is a browser-native Integrated Development Environment (IDE) specifically
 
 By abstracting away the complexities of local environment configuration, LabSTX enables developers to move from ideation to on-chain deployment in a single, cohesive web-based workflow.
 
+---
+
+### 🚀 Join Early Access
+
+**Join Early Access** — Help shape the future of browser-based Clarity development. First users get priority on features.
+
+[👉 **Register for Early Access here**](https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform)
+
+---
+
+
 ## High-Level Objectives
 
 * **Onboarding Efficiency:** Reduce developer setup time from hours to seconds.
@@ -25,13 +36,13 @@ LabSTX eliminates these barriers by providing a pre-configured, cloud-synced wor
 
 ## Feature Comparison: Cloud vs. Local
 
-| Capability       | LabSTX (Cloud)             | Clarinet (Local)           |
-| ---------------- | -------------------------- | -------------------------- |
-| Setup Latency    | ✅ Immediate (URL-based)    | ❌ ~30m Installation/Config |
-| Environment Sync | ✅ Native Cloud Persistence | ❌ Machine-dependent        |
-| Workflow         | ✅ Unified UI/UX            | ⚠️ Disparate CLI/Editor    |
-| Onboarding       | ✅ Low-friction             | ❌ High-barrier             |
-| AI Integration   | ✅ Native Assistant         | ❌ Requires 3rd-party setup |
+| Capability        | **LabSTX (Cloud)**          | Clarinet (Local)           | Hiro Playground/Sandbox | Claride |
+| ----------------- | --------------------------- | -------------------------- | ----------------------- | ------- |
+| **Multi-file Support**| ✅ **Yes**                  | ✅ Yes                      | ❌ No (Single contract) | ⚠️ Limited |
+| **Active Development**| ✅ **Yes (Commits Today)**  | ⚠️ Periodic                 | ❌ Stale                | ❌ Stale |
+| **Setup Latency** | ✅ Immediate (URL-based)     | ❌ ~30m Installation/Config | ✅ Immediate            | ✅ Immediate |
+| **Environment Sync**| ✅ Native Cloud Persistence | ❌ Machine-dependent        | ❌ Session-only         | ❌ Session-only |
+| **AI Integration**| ✅ Native Assistant         | ❌ Requires 3rd-party setup | ❌ No                   | ❌ No |
 
 ## 🛠 Technical Features
 
@@ -130,5 +141,9 @@ LabSTX aims to lower the barrier to entry for the Stacks ecosystem. By providing
 We welcome contributions! Please see our [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to get started.
 
 ---
+
+## 📜 License
+
+This project is licensed under the [MIT License](./LICENSE).
 
 © 2024 LabSTX Team. Built for the Stacks Community.
