@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import React from 'react';
 
 interface EmptyStateProps {
@@ -46,6 +47,23 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     <EditorAction label="Search Everywhere" shortcut="Ctrl+F" onClick={onToggleSearch} />
                     <EditorAction label="Show All Commands" shortcut="Ctrl+Shift+P" onClick={onToggleCommandPalette} />
                     <EditorAction label="Ask AI Assistant" shortcut="Ctrl+I" onClick={() => { }} />
+                    <div className="h-[1px] bg-caspier-border my-2 opacity-50" />
+                    <a
+                        href="https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex items-center justify-between px-4 py-2 rounded-full border border-blue-500/20 transition-all text-left"
+                    >
+                        <div className="flex flex-col">
+                            <span className="text-xs font-black text-blue-400 uppercase tracking-tighter">
+                                ✨ Join Early Access
+                            </span>
+                            <span className="text-[10px] text-blue-300 opacity-60 font-medium">
+                                Influence future Stacks features
+                            </span>
+                        </div>
+                        <span className="text-blue-400 group-hover:translate-x-0.5 transition-transform"><ChevronRight /></span>
+                    </a>
                 </div>
 
 

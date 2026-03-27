@@ -467,7 +467,7 @@ function App() {
                         setActiveTabGroup('file');
 
                         addTerminalLine({ type: 'success', content: `Imported template from GitHub: ${template.name}` });
-                        
+
                         // Clear URL params
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }
@@ -1394,7 +1394,7 @@ Include the corrected full and detailed code`;
                         contractName: activeFile ? activeFile.name : 'unknown',
                         network: settings.network,
                         status: result.success ? 'success' : 'failure',
-                        metadata: { 
+                        metadata: {
                             errors: result.errors?.length || 0,
                             functions: functions
                         }
@@ -2991,7 +2991,15 @@ Include the corrected full and detailed code`;
                     <span className=' hidden'>{gitState.branch}*</span>
                     <span>{problems.length} problems</span>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex items-center justify-center gap-4">
+                    <a
+                        href="https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline cursor-pointer flex items-center gap-1 text-white border border-white/30 px-2 py-0.5 rounded-sm bg-white/10 hover:bg-white/20 transition-all mr-2"
+                    >
+                        ✨ Join Early Access
+                    </a>
                     <button
                         onClick={() => setRunTour(true)}
                         className="hover:underline cursor-pointer"

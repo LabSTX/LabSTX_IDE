@@ -319,6 +319,8 @@ const AssistantEmptyState: React.FC<{ theme: 'dark' | 'light' }> = ({ theme }) =
                     <div className="text-caspier-muted text-[10px]">Get explanations and guidance without file changes.</div>
                 </div>
             </div>
+
+
         </div>
     );
 };

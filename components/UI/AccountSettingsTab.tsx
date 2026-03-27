@@ -101,7 +101,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
 
   const statsDataEntries = [
     { label: 'Deployed Contracts', value: deployedContracts.length, icon: RocketIcon, color: 'text-blue-500' },
-    { label: 'Total Transactions', value: stats?.totalTransactions ?? (loading ? '...' : '0'), icon: ActivityIcon, color: 'text-emerald-500' },
+    { label: 'Total Interactions', value: stats?.totalTransactions ?? (loading ? '...' : '0'), icon: ActivityIcon, color: 'text-emerald-500' },
     { label: 'AI Interactions', value: stats?.aiInteractions ?? (loading ? '...' : '0'), icon: BotIcon, color: 'text-indigo-500' },
     // { label: 'Network Status', value: wallet.network || 'Testnet', icon: GlobeIcon, color: 'text-orange-500' },
   ];
