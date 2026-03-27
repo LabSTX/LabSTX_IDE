@@ -1,138 +1,129 @@
-# LabSTX
+# LabSTX: Cloud-Native Clarity IDE
 
-**Full Browser IDE for Clarity Smart Contracts (Multi-file, Clarinet-powered)**
+<p align="center">
+  <img src="./public/lab_stx_dark.png" alt="LabSTX Logo" width="600px" />
+</p>
 
-> **Live App**: [https://lab-stx-ide.vercel.app](https://lab-stx-ide.vercel.app)
+## Overview
 
----
+LabSTX is a browser-native Integrated Development Environment (IDE) specifically engineered for the Clarity smart contract language. Unlike basic playgrounds, LabSTX supports multi-file project architectures powered by an integrated Clarinet runtime.
 
-## 🚀 What is LabSTX?
+By abstracting away the complexities of local environment configuration, LabSTX enables developers to move from ideation to on-chain deployment in a single, cohesive web-based workflow.
 
-LabSTX is a **browser-based IDE for building complete Clarity smart contract projects** — not just single-contract playgrounds.
+## High-Level Objectives
 
-It enables developers to:
+* **Onboarding Efficiency:** Reduce developer setup time from hours to seconds.
+* **Tooling Parity:** Provide the full power of the Clarinet CLI within a GUI-driven environment.
+* **Accessibility:** Enable high-quality smart contract development from any hardware capable of running a modern browser.
+* **Deployment Security:** Offer seamless, secure integration with leading Stacks wallets for Testnet and Mainnet execution.
 
-* Create and manage **multi-file Clarity projects**
-* Run **Clarinet-like workflows entirely in the browser**
-* Deploy directly to **Stacks testnet and mainnet**
-* Skip all local installation and environment setup
+## ⚡ The Motivation
 
-👉 **Core Idea:** Everything you normally need locally (Clarinet, file system, tooling) — now runs in your browser.
+Local development environments for Clarity often represent a significant barrier to entry. Managing dependencies such as the Clarinet CLI, and specific Node.js versions often leads to "it works on my machine" syndrome and high friction for new contributors.
 
----
+LabSTX eliminates these barriers by providing a pre-configured, cloud-synced workspace.
 
-## ⚡ Why LabSTX exists
+## Feature Comparison: Cloud vs. Local
 
-Clarity development today has a major friction point:
+| Capability       | LabSTX (Cloud)             | Clarinet (Local)           |
+| ---------------- | -------------------------- | -------------------------- |
+| Setup Latency    | ✅ Immediate (URL-based)    | ❌ ~30m Installation/Config |
+| Environment Sync | ✅ Native Cloud Persistence | ❌ Machine-dependent        |
+| Workflow         | ✅ Unified UI/UX            | ⚠️ Disparate CLI/Editor    |
+| Onboarding       | ✅ Low-friction             | ❌ High-barrier             |
+| AI Integration   | ✅ Native Assistant         | ❌ Requires 3rd-party setup |
 
-### Local Development Pain
+## 🛠 Technical Features
 
-To start building with Clarity using Clarinet locally, you typically need to:
+### 1. Advanced Project Management
 
-* Install Clarinet CLI
-* Set up your development environment
-* Configure project structure manually
-* Learn CLI commands before writing contracts
+Bootstrapping a new protocol is streamlined via our Template Gallery. Whether building a simple SIP-010 token or a complex DAO structure, our templates provide the required `Clarinet.toml` and directory structures instantly.
 
-This creates a **high barrier to entry**, especially for:
+<p align="center">
+  <img src="./pics/template_view.JPG" alt="Template Gallery" width="85%"/>
+</p>
 
-* New developers
-* Hackathon participants
-* Developers coming from other ecosystems
+<p align="center">
+  <em>The LabSTX Template Gallery for standardized project initialization.</em>
+</p>
 
----
+### 2. Integrated Clarinet Runtime
 
-## 💡 What LabSTX changes
+We have mapped standard CLI workflows to an intuitive visual interface, ensuring that experienced developers feel at home while guiding newcomers through the development lifecycle.
 
-LabSTX removes this friction by providing:
+| Command      | Support | Interface    | Implementation Detail                                 |
+| ------------ | ------- | ------------ | ----------------------------------------------------- |
+| check        | ✅ Full  | Real-time UI | Continuous static analysis and logic verification     |
+| test         | ✅ Full  | Terminal/UI  | Automated execution of Clarity unit tests             |
+| console      | ✅ Full  | Terminal     | Interactive REPL for real-time contract state queries |
+| contract new | ✅ Full  | GUI          | Standardized file generation and deployment config    |
 
-> A **zero-setup, full-featured Clarity IDE** that works instantly in the browser.
+<p align="center">
+  <img src="./pics/clarinet_check.JPG" alt="Clarinet Check" width="85%"/>
+</p>
+<p align="center">
+  <img src="./pics/clarinet_console.JPG" alt="Clarinet Console" width="85%"/>
+  </p>
+  <p><em>Standardised diagnostic checks and interactive REPL environment.</em></p>
 
-No installation. No configuration. No context switching.
 
----
+<p align="center">
+  <img src="./pics/npm-run-test_(clarinet_test).JPG" alt="Unit Testing" width="85%"/>
+</p>
 
-## 🔥 Detailed Comparison
+<p align="center">
+  <em>Comprehensive unit testing output with integrated terminal reporting.</em>
+</p>
 
-| Capability          | LabSTX (Browser IDE)                 | Clarinet (Local Setup)            |
-| ------------------- | ------------------------------------ | --------------------------------- |
-| Setup Time          | ✅ **0–1 min (open URL)**             | ❌ **10–30+ mins install & setup** |
-| Environment Setup   | ❌ None required                      | ⚠️ Required (CLI, dependencies)   |
-| Multi-file Projects | ✅ Full support                       | ✅ Full support                    |
-| Clarinet Workflow   | ✅ In-browser                         | ✅ CLI-based                       |
-| Deployment          | ✅ Built-in (UI)                      | ⚠️ CLI + wallet setup             |
-| Debugging Tools     | ✅ Intergrated stxer.xyz              | ⚠️ CLI-based / limited UX         |
-| AI Assistance       | ✅ Integrated                         | ❌ None                            |
-| Learning Curve      | ✅ Low (UI-driven)                    | ❌ Higher (CLI-based)              |
-| Accessibility       | ✅ Works anywhere (browser)           | ❌ Machine-dependent               |
-| Onboarding Speed    | ✅ **Minutes**                        | ❌ **Hours (for beginners)**       |
+### 3. AI-Assisted Development
 
-👉 LabSTX reduces onboarding friction from **hours → minutes**.
+The IDE features a context-aware AI assistant integrated via OpenRouter. The assistant analyzes your specific multi-file project structure to provide relevant code suggestions, debugging advice, and architectural optimizations.
 
----
+<p align="center">
+  <img src="./pics/ai_view.JPG" alt="AI Assistant" width="85%"/>
+</p>
 
-## 🛠 Clarinet Command Support
-
-LabSTX provides a web-based replacement for the most common Clarinet CLI workflows.
-
-| Clarinet Command | LabSTX Support | Interface | Notes |
-| :--- | :--- | :--- | :--- |
-| `clarinet check` | ✅ **Full** | UI / Auto-run | Real-time syntax & logic verification |
-| `clarinet test` | ✅ **Full** | UI / Terminal | Run unit tests with visual results |
-| `clarinet console` | ✅ **Full** | Terminal | Interactive contract interaction |
-| `clarinet contract new` | ✅ **Full** | Terminal | Create new contracts and test files |
-| `clarinet requirements` | ✅ **Full** | Terminal | Dependency and requirement checking |
-| `clarinet devnet start` | ❌ **No** | N/A | Docker/Local node orchestration not supported |
-| `clarinet devnet stop` | ❌ **No** | N/A | Docker/Local node orchestration not supported |
-| `clarinet integrate` | ❌ **Planned** | N/A | Complex integration testing in progress |
-
-**Note**: Most commands are supported only the commands that needs docker like `clarinet devnet start` are not supported 
-
----
+<p align="center">
+  <em>AI Assistant for code generation and debugging.</em>
+</p>
 
 ## ✨ Core Capabilities
 
+### 🧠 Modern Development Environment
 
-### 🧠 Development Environment
+* **Monaco Editor:** Industry-standard editor with Clarity syntax highlighting.
+* **Project System:** Full `Clarinet.toml` support and tabbed editing.
+* **Neo-Brutalist UI:** A high-contrast, premium design aesthetic focused on developer productivity.
 
-* Monaco Editor with Clarity syntax highlighting
-* Full **multi-file project system** (`Clarinet.toml` support)
-* Tabbed editing with unsaved state tracking
-* ABI preview and markdown rendering
-* **Neo-Brutalist UI**: High-contrast, premium design for enhanced focus
+### 🚀 Deployment & Security
 
-### ⚙️ Execution & Compilation
+* **Direct-to-Chain:** Deploy to Stacks Testnet/Mainnet via Leather or Xverse wallets.
+* **Visual Configuration:** Configure gas fees and arguments through a DeployPanel
+* **Secure Auth:** Wallet-first experience ensures your private keys never touch the IDE.
 
-* In-browser compilation using `Clarinet installed on the server`
-* Real-time error reporting and terminal feedback
+### 🐛 Debugging
 
-### 🚀 Deployment Pipeline
+* **stxer.xyz Integration:** Deep link into advanced contract inspection tools.
+* **Live Explorer Links:** Immediate access to Hiro Explorer after every transaction.
 
-* Deploy contracts to **Stacks testnet and mainnet** via Leather Wallet
-* Configure arguments, entry points, and gas fees visually
-* View transaction hashes and contract IDs instantly
-* **Live Hiro Explorer Links**: Direct links to view deployments on-chain
+## 👥 Who is LabSTX for?
 
-### 🐛 Debugging & Inspection
+* **New Developers:** Learn Clarity without fighting installation errors.
+* **Hackathon Builders:** Go from "Idea" to "Deployed" in record time.
+* **Educators:** Lead workshops where every student has the exact same environment instantly.
+* **Power Users:** Rapidly prototype new contract logic without cluttering your local machine.
 
-* Debug contract interaction with integrated stxer.xyz
-* REPL environment for local testing
+## 🧰 Tech Stack
 
-### 🔗 Integrations & AI
+* **Frontend:** React, TypeScript, Vite
+* **Editor:** Monaco Editor (`@monaco-editor/react`)
+* **Blockchain Logic:** `@stacks/clarinet-sdk-browser`, `@stacks/connect`, `@stacks/transactions`
+* **Backend:** Node.js (Git services, API, AI integration)
+* **Deployment:** Vercel
 
-* GitHub integration (clone repositories, authentication)
-* **AI Coding Assistant** (OpenRouter) with project context
-* **AI Quota Tracking**: Real-time credits and usage monitoring
-* ZIP import/export for project sharing
+## 🎯 Our Vision
 
----
-
-### 🔐 Security & Connectivity
-* **Wallet-First Experience**: Connect your Stacks wallet (Laser/Xverse) to unlock full IDE potential
-* Secure deployment environment with mandatory connection for sensitive operations
-* Encrypted local storage for project state and settings
-
----
+LabSTX aims to lower the barrier to entry for the Stacks ecosystem. By providing a complete, browser-native alternative to local Clarinet workflows, we enable a global community of developers to build on Bitcoin-secured smart contracts regardless of their hardware or setup constraints.
 
 ## 🤝 Contributing
 
@@ -140,46 +131,4 @@ We welcome contributions! Please see our [CONTRIBUTING.md](./CONTRIBUTING.md) fo
 
 ---
 
-## 👥 Who is this for?
-
-* **New developers** → Learn Clarity without setup friction
-* **Hackathon builders** → Start building instantly
-* **Experienced developers** → Rapid prototyping without context switching
-* **Educators** → Teach Clarity in classrooms without installation issues
-
----
-
-## 📈 Current Status
-
-* ✅ Functional public beta
-* ✅ Full IDE experience running in-browser
-* 🚧 Actively being improved based on user feedback
-
----
-
-## 🎯 Vision
-
-LabSTX aims to:
-
-* Lower the barrier to entry for Clarity development
-* Increase the number of developers building on Stacks
-* Provide a **complete alternative to local Clarinet workflows**
-* Enable faster onboarding globally, especially in regions with limited dev setup resources
-
----
-
-## 🧰 Tech Stack
-
-* React + TypeScript + Vite
-* Monaco Editor (`@monaco-editor/react`)
-* `@stacks/clarinet-sdk-browser`
-* `@stacks/connect`, `@stacks/transactions`
-* Node.js backend (Git + API services)
-* Vercel (deployment)
-
----
-
-## 🔗 Links
-
-* Live App: [https://lab-stx-ide.vercel.app](https://lab-stx-ide.vercel.app)
-* GitHub: [https://github.com/LabSTX/LabSTX_IDE](https://github.com/LabSTX/LabSTX_IDE)
+© 2024 LabSTX Team. Built for the Stacks Community.
