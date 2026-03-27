@@ -1,3 +1,4 @@
+@import "./components/UI/markdown.css";
 @import "tailwindcss";
 @config "./tailwind.config.js";
 

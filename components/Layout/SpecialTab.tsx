@@ -147,6 +147,7 @@ export const SpecialTab: React.FC<SpecialTabProps> = ({
                 onCreateBlank={onCreateWorkspace}
                 onImport={onImportWorkspace}
                 onClose={() => onCloseTab('@new-project')}
+                theme={theme}
             />
         );
     }
