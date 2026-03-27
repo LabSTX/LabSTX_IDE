@@ -1594,11 +1594,10 @@ Include the corrected full and detailed code`;
 
     // Initialize Socket.io
     useEffect(() => {
-        const socketUrl = window.location.hostname === 'localhost'
-            ? 'http://localhost:5001'
-            : window.location.origin.replace('3000', '5001');
-
-        const socket = io(socketUrl);
+        const socketUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
+        const socket = io(socketUrl, {
+            transports: ['websocket', 'polling']
+        });
         socketRef.current = socket;
 
         socket.on('connect', () => {
