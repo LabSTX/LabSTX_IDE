@@ -537,27 +537,36 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
                 ? "\n\nMODE: ASK MODE. Answer questions based on code and documentation. DO NOT generate [UPDATE_FILE] or [CREATE_FILE] tags. Provide explanations only."
                 : "\n\nMODE: EDIT MODE. You can suggest file changes using [UPDATE_FILE: filename] or [CREATE_FILE: filename] tags when appropriate. Always provide the full file content inside the tags.";
 
+            let interactCalled = false;
             await streamAIResponse(userMsg.text, contextPayload + modeInstruction, history, aiConfig, (chunk) => {
+                if (!interactCalled && chunk) {
+                    onInteraction?.();
+                    interactCalled = true;
+                }
                 setMessages(prev => prev.map(m =>
                     m.id === aiMsgId ? { ...m, text: m.text + chunk } : m
                 ));
             }, wallet.address);
 
             // Telemetry Ingest - only on success
-            fetch('/ide-api/stats/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    eventType: 'AI_INTERACTION',
-                    wallet: wallet.address || 'unconnected',
-                    payload: {
-                        mode: aiMode,
-                        messageLength: userMsg.text.length
-                    }
-                })
-            }).catch(err => console.error('Telemetry failed:', err));
+            try {
+                await fetch('/ide-api/stats/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        eventType: 'AI_INTERACTION',
+                        wallet: wallet.address || 'unconnected',
+                        payload: {
+                            mode: aiMode,
+                            messageLength: userMsg.text.length
+                        }
+                    })
+                });
+            } catch (err) {
+                console.error('Telemetry failed:', err);
+            }
 
-            // Signal App to check for quota update
+            // Final signal to ensure quota is up to date after ingest
             onInteraction?.();
 
         } catch (err) {

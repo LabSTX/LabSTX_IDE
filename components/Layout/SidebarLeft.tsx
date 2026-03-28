@@ -581,7 +581,8 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         clarity: '4',
         node: 'v22.22.0',
         npm: 'v10.9.0',
-        clarinet: 'v3.15.0'
+        clarinet: 'v3.15.0',
+        epoch: '3.4'
     });
 
     // Close dropdown on click outside
@@ -1013,8 +1014,15 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                     <span className="text-[8px] font-black text-labstx-orange bg-labstx-orange/10 px-1 rounded uppercase tracking-tighter">Compiler</span>
                                 </div>
                                 <div className='flex gap-1'>
-                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarity {systemVersions.clarity}</span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|</span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarinet {systemVersions.clarinet}</span>
+                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarity {systemVersions.clarity}</span>
+                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
+                                    </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarinet {systemVersions.clarinet}</span>
+                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
+                                    </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Epoch {systemVersions.epoch}</span>
+
                                 </div>
+
+
                             </div>
                         </div>
 

@@ -2596,6 +2596,14 @@ Include the corrected full and detailed code`;
         return (isMd || isClar) ? f : null;
     })();
 
+    const isClarityFile = (() => {
+        if (!activeFileId || activeFileId === '@home') return false;
+        if (activeFileId.startsWith('@abi-') || activeFileId.startsWith('@md-')) return false;
+        const f = findFile(files, activeFileId);
+        if (!f) return false;
+        return f.name.endsWith('.clar') || f.name.endsWith('.clarity');
+    })();
+
     return (
         <div className="h-screen w-screen flex flex-col bg-caspier-black text-caspier-text overflow-hidden font-sans">
 
@@ -2781,8 +2789,9 @@ Include the corrected full and detailed code`;
                                     variant="primary"
                                     size="sm"
                                     onClick={handleCompile}
-                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                                    title="Run Clarinet Check (F5)"
+                                    disabled={!isClarityFile}
+                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={isClarityFile ? "Run Clarinet Check (F5)" : "Open a .clar file to compile"}
                                 >
                                     <PlayIcon className="w-3 h-3" />
                                     <span>Compile</span>
