@@ -603,7 +603,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         clarity: '5',
         node: 'v22.22.0',
         npm: 'v10.9.0',
-        clarinet: 'v3.15.0',
+        clarinet: 'v3.16.0',
         epoch: '3.4'
     });
 
