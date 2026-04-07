@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileNode } from '../../types';
-import { SmartFileIcon, XIcon, HomeIcon, EyeIcon, UserIcon } from '../UI/Icons';
+import { SmartFileIcon, XIcon, HomeIcon, EyeIcon, UserIcon, PlusIcon, MinusIcon, AnalyseIcon } from '../UI/Icons';
+import { ProjectSettings } from '../../types';
+import { ZoomInIcon, ZoomOutIcon, FunctionSquareIcon } from 'lucide-react';
 
 interface EditorTabsProps {
   files: FileNode[];
@@ -13,6 +15,8 @@ interface EditorTabsProps {
   onReorder: (newOrder: string[]) => void;
   modifiedFileIds: string[];
   dirtyFileIds: string[];
+  settings?: ProjectSettings;
+  onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
 }
 
 const EditorTabs: React.FC<EditorTabsProps> = ({
@@ -25,7 +29,9 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   onCloseAll,
   onReorder,
   modifiedFileIds,
-  dirtyFileIds
+  dirtyFileIds,
+  settings,
+  onUpdateSettings
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -38,14 +44,17 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   }, []);
 
   // Helper to find file details for display
-  const findFileDetails = (nodes: FileNode[], id: string): { name: string, type: string, isAbi?: boolean, isMd?: boolean, srcName?: string } | null => {
+  const findFileDetails = (nodes: FileNode[], id: string): { name: string, type: string, isAbi?: boolean, isMd?: boolean, srcName?: string, isContractCall?: boolean } | null => {
     if (id === '@home') return { name: 'Home', type: 'file' };
     if (id === '@changelog') return { name: 'Changelog', type: 'file', isMd: true, srcName: 'CHANGELOG.md' };
     if (id === '@stxer-debugger') return { name: 'Stxer debugger', type: 'file' };
-    if (id === '@account') return { name: 'Account Settings', type: 'file' };
+    if (id === '@account') return { name: 'Account Analytics', type: 'file' };
 
     // ── Contract Activity Detial tabs (@contract-{id})
     if (id.startsWith('@contract-')) {
+      if (id.startsWith('@contract-call-')) {
+        return { name: 'Contract Call', type: 'file', isContractCall: true };
+      }
       return { name: 'Contract Detail', type: 'file' };
     }
 
@@ -133,6 +142,35 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
 
   return (
     <div id="editor-tabs" className="flex bg-caspier-black border-b border-caspier-border overflow-x-auto scrollbar-hide select-none transition-all">
+      {activeFileId && !activeFileId.startsWith('@') &&
+        <div className="flex items-center gap-1 px-4 border-l border-caspier-border bg-caspier-black/40">
+          <button
+            onClick={() => {
+              if (settings && onUpdateSettings) {
+                onUpdateSettings('fontSize', Math.max(8, (settings.fontSize || 12) - 1));
+              }
+            }}
+            className="p-1 text-caspier-muted hover:text-labstx-orange transition-colors rounded hover:bg-caspier-hover"
+            title="Zoom Out"
+          >
+            <ZoomOutIcon className="w-3.5 h-3.5" />
+          </button>
+          <div className="hidden text-[10px] font-black text-caspier-muted min-w-[24px] text-center opacity-60">
+            {settings?.fontSize || 12}
+          </div>
+          <button
+            onClick={() => {
+              if (settings && onUpdateSettings) {
+                onUpdateSettings('fontSize', Math.min(32, (settings.fontSize || 12) + 1));
+              }
+            }}
+            className="p-1 text-caspier-muted hover:text-labstx-orange transition-colors rounded hover:bg-caspier-hover"
+            title="Zoom In"
+          >
+            <ZoomInIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      }
       {openFileIds.map((id) => {
         const file = findFileDetails(files, id);
         if (!file) return null;
@@ -171,7 +209,9 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
             ) : id === '@stxer-debugger' ? (
               <StacksIcon className={`w-3.5 h-3.5 ${isActive ? '' : 'opacity-70 grayscale'}`} />
             ) : id === '@account' ? (
-              <UserIcon className={`w-3.5 h-3.5 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
+              <AnalyseIcon className={`w-3.5 h-3.5 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
+            ) : file.isContractCall ? (
+              <FunctionSquareIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
             ) : file.isAbi ? (
               <EyeIcon className={`w-3 h-3 flex-shrink-0 ${isActive ? 'text-labstx-orange' : 'text-caspier-muted'}`} />
             ) : file.isMd ? (
@@ -181,7 +221,11 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
             )}
 
             <span className={`truncate flex-1 ${isModified || isDirty ? 'font-medium italic text-caspier-text/80' : ''}`}>
-              {file.isAbi ? (
+              {file.isContractCall ? (
+                <span className="flex items-center gap-1">
+                  <span className="truncate">{file.name}</span>
+                </span>
+              ) : file.isAbi ? (
                 <span className="flex items-center gap-1">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-labstx-orange/70 bg-labstx-orange/10 border border-caspier-border px-1 rounded">ABI</span>
                   <span className="truncate">{file.srcName}</span>
@@ -218,6 +262,8 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
           </div>
         );
       })}
+
+      {/* Zoom Controls */}
 
       {/* Context Menu */}
       {contextMenu && (

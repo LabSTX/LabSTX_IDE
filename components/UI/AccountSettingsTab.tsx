@@ -116,7 +116,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-16 animate-in">
           <div className="flex items-center gap-6">
             <div className="relative group">
-              <div className="w-24 h-24 rounded-2xl bg-labstx-panel border-2 border-labstx-orange flex items-center justify-center shadow-neobrutal group-hover:translate-x-1 group-hover:translate-y-1 group-hover:shadow-none transition-all">
+              <div className="w-24 h-24  bg-labstx-panel border-2 border-labstx-orange flex items-center justify-center shadow-neobrutal group-hover:translate-x-1 group-hover:translate-y-1 group-hover:shadow-none transition-all">
                 <UserIcon className="w-12 h-12 text-labstx-orange" />
               </div>
               <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-emerald-500 border-4 border-labstx-black flex items-center justify-center" title="Online">
@@ -146,7 +146,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-16 animate-in">
           {statsDataEntries.map((stat, i) => (
-            <div key={i} className="bg-labstx-panel rounded-xl p-5 border border-labstx-border hover:border-labstx-orange transition-all group shadow-sm">
+            <div key={i} className="bg-labstx-panel p-5 border border-labstx-border hover:border-labstx-orange transition-all group shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <div className={`p-2 rounded-lg bg-labstx-black border border-labstx-border group-hover:border-labstx-orange transition-colors`}>
                   <stat.icon className={`w-5 h-5 ${stat.color}`} />
@@ -166,7 +166,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
 
           <div className="lg:col-span-5 space-y-12">
             {/* AI Subscription Status */}
-            <section className="p-6 rounded-2xl bg-labstx-panel border border-labstx-border shadow-neobrutal-sm overflow-hidden relative group">
+            <section className="p-6  bg-labstx-panel border border-labstx-border shadow-neobrutal-sm overflow-hidden relative group">
               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                 <BotIcon className="w-24 h-24 -rotate-12 translate-x-4 -translate-y-4" />
               </div>
@@ -204,7 +204,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
                 <h2 className="text-xs font-black text-labstx-muted uppercase tracking-[0.2em]">Recent Deployments</h2>
                 <Button variant="secondary" size="sm" className="text-[9px] h-6 px-2">View History</Button>
               </div>
-              <div className="bg-labstx-panel rounded-xl border border-labstx-border divide-y divide-labstx-border/30 shadow-neobrutal-sm overflow-y-auto max-h-[400px]">
+              <div className="bg-labstx-panel border border-labstx-border divide-y divide-labstx-border/30 shadow-neobrutal-sm overflow-y-auto max-h-[400px]">
                 {loading ? (
                   <div className="p-10 flex justify-center">
                     <div className="w-6 h-6 border-2 border-labstx-orange border-t-transparent rounded-full animate-spin" />
@@ -269,12 +269,12 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
         <footer className="mt-24 pt-8 border-t border-labstx-border flex flex-col md:flex-row justify-between items-center gap-6 text-[11px] font-bold text-labstx-muted uppercase tracking-widest animate-in">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-labstx-orange" />
-            LabSTX IDE Profile v1.2.5
+            LabSTX IDE v1.2.1
           </div>
           <div className="flex gap-8">
             <a href="#" className="hover:text-labstx-text transition-colors">Privacy Policy</a>
             <a href="#" className="hover:text-labstx-text transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-labstx-text transition-colors">Bug Bounty</a>
+            <a href="#" className="hover:text-labstx-text transition-colors hidden">Bug Bounty</a>
           </div>
         </footer>
 

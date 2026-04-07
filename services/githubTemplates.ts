@@ -6,6 +6,7 @@ export interface GitHubTemplate {
   description: string;
   path: string;
   previewPath?: string;
+  type: string;
 }
 
 /**
@@ -51,7 +52,7 @@ export class GitHubTemplateService {
   /**
    * Fetch all files for a template recursively using the GitHub Data API
    */
-  static async fetchTemplateFiles(templatePath: string): Promise<Record<string, string>> {
+  static async fetchTemplateFiles(templatePath: string, onProgress?: (percent: number) => void): Promise<Record<string, string>> {
     try {
       // 1. Get the recursive tree for the repository
       // Optimization: We could just get the contents of the template folder if it's not too deep
@@ -63,6 +64,10 @@ export class GitHubTemplateService {
 
       const contents = await response.json();
       const files: Record<string, string> = {};
+      let completedItems = 0;
+      let totalItems = contents.length;
+      
+      if (onProgress) onProgress(0);
 
       const processItem = async (item: any, currentPath: string) => {
         if (item.type === 'file') {
@@ -72,9 +77,12 @@ export class GitHubTemplateService {
             ? item.path.substring(templatePath.length + 1)
             : item.path;
           files[relativePath] = content;
+          completedItems++;
+          if (onProgress) onProgress(Math.round((completedItems / totalItems) * 100));
         } else if (item.type === 'dir') {
           const dirResponse = await fetch(item.url);
           const dirContents = await dirResponse.json();
+          totalItems += dirContents.length - 1; // Subtract 1 because we're replacing the dir item with its contents count
           for (const subItem of dirContents) {
             await processItem(subItem, `${currentPath}/${subItem.name}`);
           }

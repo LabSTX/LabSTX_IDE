@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { ActivityView } from '../../types';
-import { FileIcon, SearchIcon, GitIcon, BugIcon, SettingsIcon, RocketIcon, HomeIcon, ActivityIcon, GlobeIcon, UserIcon, BarChartIcon } from '../UI/Icons';
+import { FileIcon, SearchIcon, GitIcon, BugIcon, SettingsIcon, RocketIcon, HomeIcon, ActivityIcon, GlobeIcon, UserIcon, BarChartIcon, DatabaseIcon, CheckCircleIcon, BookOpenIcon } from '../UI/Icons';
 
 import { useGitHubAuth } from '../../contexts/GitHubAuthContext';
 import AccountPopover from '../UI/AccountPopover';
+import { CircleQuestionMarkIcon, FunctionSquareIcon, TestTubeDiagonal } from 'lucide-react';
 
 interface ActivityBarProps {
   activeView: ActivityView;
@@ -27,9 +28,12 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
     { view: ActivityView.EXPLORER, icon: FileIcon, label: 'Explorer' },
     { view: ActivityView.SEARCH, icon: SearchIcon, label: 'Search' },
     { view: ActivityView.DEPLOY, icon: RocketIcon, label: 'Deploy & Run' },
-    //{ view: ActivityView.STATISTICS, icon: BarChartIcon, label: 'Ecosystem Stats' },
+    { view: ActivityView.CALL_CONTRACT, icon: FunctionSquareIcon, label: 'Call Functions & Query States' },
+    // { view: ActivityView.SIMNET, icon: DatabaseIcon, label: 'Simnet Simulation' },
+    { view: ActivityView.UNIT_TEST, icon: TestTubeDiagonal, label: 'Clarity Unit Testing' },
     { view: ActivityView.ACTIVITY_HISTORY, icon: ActivityIcon, label: 'Activity History' },
-    { view: ActivityView.LEARN_STX, icon: GlobeIcon, label: 'Learn STX' },
+    //{ view: ActivityView.LEARN_STX, icon: GlobeIcon, label: 'Learn STX' },
+    { view: ActivityView.HELP_WALKTHROUGH, icon: CircleQuestionMarkIcon, label: 'Help & Walkthrough' },
   ];
 
 
@@ -94,7 +98,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
             ref={accountButtonRef}
             id="view-account"
             className="p-2 text-caspier-muted hover:text-caspier-text cursor-pointer transition-colors"
-            title="Account Settings"
+            title="Account Analytics"
             onClick={handleAccountClick}
           >
             {isAuthenticated && user?.avatar_url ? (

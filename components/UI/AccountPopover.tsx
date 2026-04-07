@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useGitHubAuth } from '../../contexts/GitHubAuthContext';
-import { GitHubIcon, UserIcon, LogOutIcon, FileTextIcon, BugIcon, SettingsIcon } from './Icons';
+import { GitHubIcon, UserIcon, LogOutIcon, FileTextIcon, BugIcon, SettingsIcon, AnalyseIcon } from './Icons';
 
 interface AccountPopoverProps {
     isOpen: boolean;
@@ -12,6 +12,18 @@ interface AccountPopoverProps {
 const AccountPopover: React.FC<AccountPopoverProps> = ({ isOpen, onClose, anchorRect, onSettings }) => {
     const { user, login, logout, isAuthenticated } = useGitHubAuth();
     const popoverRef = useRef<HTMLDivElement>(null);
+
+    const [wallet, setWallet] = useState(() => {
+        const saved = localStorage.getItem('labstx_wallet');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { return { type: 'none', connected: false }; }
+        }
+        return { type: 'none', connected: false };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_wallet', JSON.stringify(wallet));
+    }, [wallet]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -93,41 +105,40 @@ const AccountPopover: React.FC<AccountPopoverProps> = ({ isOpen, onClose, anchor
                 )}
 
                 <div className="h-px bg-caspier-border my-1.5 mx-1" />
-                {isAuthenticated && user && (
-                    <button
-                        onClick={() => {
-                            if (onSettings) onSettings();
-                            onClose();
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-caspier-text hover:bg-caspier-panel rounded-md transition-all group"
-                    >
-                        <SettingsIcon className="w-4 h-4 opacity-70 group-hover:opacity-100 text-labstx-orange" />
-                        <span>Account Settings</span>
-                    </button>
-                )}
+
+
+
+                <button
+                    onClick={() => {
+                        if (onSettings) onSettings();
+                        onClose();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-caspier-text hover:bg-caspier-panel rounded-md transition-all group"
+                >
+                    <AnalyseIcon className="w-4 h-4 opacity-70 group-hover:opacity-100 text-labstx-orange" />
+                    <span>Account Analytics</span>
+                </button>
+
 
                 <a
                     href="https://docs.labstx.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-caspier-text hover:bg-caspier-panel rounded-md transition-all group"
+                    className="hidden w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-caspier-text hover:bg-caspier-panel rounded-md transition-all group"
                 >
                     <FileTextIcon className="w-4 h-4 opacity-70 group-hover:opacity-100 text-blue-500" />
                     <span>Documentation</span>
                 </a>
 
-                <button
-                    onClick={() => {
-                        // This could trigger a global event or prop call to open the bug modal
-                        // For now we'll just close the popover
-                        onClose();
-                        window.dispatchEvent(new CustomEvent('open-bug-report'));
-                    }}
+                <a
+                    href="https://github.com/LabSTX/LabSTX_IDE/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-caspier-text hover:bg-caspier-panel rounded-md transition-all group"
                 >
                     <BugIcon className="w-4 h-4 opacity-70 group-hover:opacity-100 text-red-500" />
                     <span>Report an Issue</span>
-                </button>
+                </a>
             </div>
         </div>
     );

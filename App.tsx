@@ -26,7 +26,9 @@ import { DiscoveryImportType, StacksNetworkType } from './components/Layout/Disc
 import IntroLoading from './components/UI/IntroLoading';
 import { webContainerService } from './services/webContainerService';
 import confetti from 'canvas-confetti';
-
+import { Droplets } from 'lucide-react';
+import { get, set } from 'idb-keyval';
+import FaucetPopover from './components/UI/FaucetPopover';
 
 const CHANGELOG_CONTENT = `# Changelog
 
@@ -55,7 +57,14 @@ function App() {
         const saved = localStorage.getItem('labstx_active_view');
         return (saved as ActivityView) || ActivityView.EXPLORER;
     });
+    const [hasClarinet, setHasClarinet] = useState(false);
 
+    const dialogRef = useRef<HTMLDialogElement>(null);
+
+    const handleSelect = (value: 'LF' | 'CRLF') => {
+        setLineEnding(value);
+        dialogRef.current?.close();
+    };
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -81,26 +90,27 @@ function App() {
     });
 
     const [firstRunWorkspaces, setFirstRunWorkspaces] = useState<Record<string, boolean>>({});
+    const [isStateLoaded, setIsStateLoaded] = useState(false);
 
-    // Workspace State with localStorage persistence
-    const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>(() => {
-        const saved = localStorage.getItem('labstx_workspaces');
-        if (saved) {
-            try { return JSON.parse(saved); } catch (e) { return { 'default_workspace': INITIAL_FILES }; }
-        }
-        return { 'default_workspace': INITIAL_FILES };
-    });
+    const [workspaces, setWorkspaces] = useState<Record<string, FileNode[]>>({});
     const [activeWorkspace, setActiveWorkspace] = useState(() => {
         return localStorage.getItem('labstx_active_workspace') || 'default_workspace';
     });
 
+
+    // Persistence logic moved to useEffect below
     useEffect(() => {
-        localStorage.setItem('labstx_workspaces', JSON.stringify(workspaces));
-    }, [workspaces]);
+        if (isStateLoaded) {
+            set('labstx_workspaces', workspaces);
+            console.log("Saved to IndexedDB"); // Add this to verify it's firing
+        }
+    }, [workspaces, isStateLoaded]);
 
     useEffect(() => {
-        localStorage.setItem('labstx_active_workspace', activeWorkspace);
-    }, [activeWorkspace]);
+        if (isStateLoaded) {
+            localStorage.setItem('labstx_active_workspace', activeWorkspace);
+        }
+    }, [activeWorkspace, isStateLoaded]);
 
     // Workspace Metadata (timestamps, etc)
     const [workspaceMetadata, setWorkspaceMetadata] = useState<Record<string, { createdAt: number }>>(() => {
@@ -122,6 +132,13 @@ function App() {
     // Derived state for current file tree
     const files = history[historyIndex];
 
+    useEffect(() => {
+        const checkClarinet = (nodes: FileNode[]): boolean => {
+            return nodes.some(node => node.name.toLowerCase() === 'clarinet.toml');
+        };
+        setHasClarinet(checkClarinet(files));
+    }, [files, setHasClarinet]);
+
     // Editor Tabs State with persistence
     // Editor Tabs State (non-persistent)
     const [openFileIds, setOpenFileIds] = useState<string[]>([]);
@@ -130,15 +147,32 @@ function App() {
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [activeSpecialId, setActiveSpecialId] = useState<string | null>('@home');
     const [activeTabGroup, setActiveTabGroup] = useState<'file' | 'special'>('special');
-
-
-
     const [activeContent, setActiveContent] = useState<string>('');
+    const [pendingNodeCommand, setPendingNodeCommand] = useState<{ command: string, terminalId: string, timestamp: number } | null>(null);
+    //  const [searchFindQuery, setSearchFindQuery] = useState<string>('');
+    //const [templateProgress, setTemplateProgress] = useState<number | null>(null);
     const [activeLanguage, setActiveLanguage] = useState<string>('clarity');
     // Tracks which file was last loaded into the editor so we only pull from 'files'
     // when the user actually switches tabs — never during normal typing.
     const loadedFileIdRef = useRef<string | null>(null);
     const sidebarRightRef = useRef<any>(null);
+
+    // Simnet State
+    const [activeSimnetAccount, setActiveSimnetAccount] = useState<string>(() => {
+        return localStorage.getItem('labstx_active_simnet_account') || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('labstx_active_simnet_account', activeSimnetAccount);
+    }, [activeSimnetAccount]);
+
+    const handleOpenSimnetScratchpad = () => {
+        if (!openSpecialIds.includes('@simnet')) {
+            setOpenSpecialIds(prev => [...prev, '@simnet']);
+        }
+        setActiveSpecialId('@simnet');
+        setActiveTabGroup('special');
+    };
     const [lineEnding, setLineEnding] = useState<'LF' | 'CRLF'>('CRLF');
     const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
     const cursorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,6 +192,10 @@ function App() {
     ]);
     const [activeTerminalId, setActiveTerminalId] = useState<string>('default');
     const [discoveryProgress, setDiscoveryProgress] = useState(0);
+
+    const socketRef = useRef<Socket | null>(null);
+    const activeTerminal = terminals.find(t => t.id === activeTerminalId) || terminals[0];
+
 
     // Helper to add lines to a specific terminal
     const addTerminalLineToInstance = useCallback((terminalId: string, line: Omit<TerminalLine, 'id'>) => {
@@ -193,17 +231,80 @@ function App() {
     useEffect(() => {
         localStorage.setItem('labstx_wallet', JSON.stringify(wallet));
     }, [wallet]);
-    const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>(() => {
-        const saved = localStorage.getItem('labstx_deployed_contracts');
-        if (saved) {
-            try { return JSON.parse(saved); } catch (e) { return []; }
-        }
-        return [];
-    });
+
+    const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([]);
 
     useEffect(() => {
-        localStorage.setItem('labstx_deployed_contracts', JSON.stringify(deployedContracts));
-    }, [deployedContracts]);
+        if (isStateLoaded) {
+            set('labstx_deployed_contracts', deployedContracts);
+        }
+    }, [deployedContracts, isStateLoaded]);
+
+    // Initial State Loader and Migration
+    useEffect(() => {
+        const loadInitialState = async () => {
+            try {
+                // 1. Load Workspaces
+                let savedWorkspaces = await get('labstx_workspaces');
+                if (!savedWorkspaces) {
+                    // Try migration from localStorage
+                    const legacy = localStorage.getItem('labstx_workspaces');
+                    if (legacy) {
+                        try {
+                            savedWorkspaces = JSON.parse(legacy);
+                            await set('labstx_workspaces', savedWorkspaces);
+                            localStorage.removeItem('labstx_workspaces');
+                        } catch (e) {
+                            savedWorkspaces = { 'default_workspace': INITIAL_FILES };
+                        }
+                    } else {
+                        savedWorkspaces = { 'default_workspace': INITIAL_FILES };
+                    }
+                }
+                setWorkspaces(savedWorkspaces);
+
+                // 2. Load Active Workspace (stays in localStorage as it is small)
+                const savedActive = localStorage.getItem('labstx_active_workspace');
+                if (savedActive) setActiveWorkspace(savedActive);
+
+                // 3. Load Deployed Contracts
+                let savedContracts = await get('labstx_deployed_contracts');
+                if (!savedContracts) {
+                    // Try migration from localStorage
+                    const legacy = localStorage.getItem('labstx_deployed_contracts');
+                    if (legacy) {
+                        try {
+                            savedContracts = JSON.parse(legacy);
+                            await set('labstx_deployed_contracts', savedContracts);
+                            localStorage.removeItem('labstx_deployed_contracts');
+                        } catch (e) {
+                            savedContracts = [];
+                        }
+                    } else {
+                        savedContracts = [];
+                    }
+                }
+                // Filter out simnet contracts as they are transient
+                const filteredContracts = (savedContracts || []).filter((c: any) => c.network !== 'simnet');
+                setDeployedContracts(filteredContracts);
+
+                // 4. Update History with initial files of the active workspace
+                const activeFiles = savedWorkspaces[savedActive || 'default_workspace'] || INITIAL_FILES;
+                setHistory([activeFiles]);
+
+                setIsStateLoaded(true);
+                console.log('[Persistence] State loaded from IndexedDB');
+            } catch (err) {
+                console.error('[Persistence] Failed to load state:', err);
+                // Fallback to defaults
+                setWorkspaces({ 'default_workspace': INITIAL_FILES });
+                setHistory([INITIAL_FILES]);
+                setIsStateLoaded(true);
+            }
+        };
+
+        loadInitialState();
+    }, []);
 
     const handleOpenNewProject = () => {
         if (!openSpecialIds.includes('@new-project')) {
@@ -235,6 +336,23 @@ function App() {
 
     const [isAiQuotaReached, setIsAiQuotaReached] = useState(false);
     const [aiStats, setAiStats] = useState<{ aiInteractions: number; aiQuotaLimit: number } | null>(null);
+    const [templateProgress, setTemplateProgress] = useState<number | null>(null);
+    const [prefilledContractInfo, setPrefilledContractInfo] = useState<{ address: string; name: string } | null>(null);
+
+    const handleGoToInteract = useCallback((contractHash: string) => {
+        const [address, name] = contractHash.split('.');
+        setPrefilledContractInfo({ address, name });
+        setActiveView(ActivityView.CALL_CONTRACT);
+    }, []);
+
+    const handleOpenContractCall = useCallback((contractHash: string) => {
+        const tabId = `@contract-call-${contractHash}`;
+        if (!openSpecialIds.includes(tabId)) {
+            setOpenSpecialIds(prev => [...prev, tabId]);
+        }
+        setActiveSpecialId(tabId);
+        setActiveTabGroup('special');
+    }, [openSpecialIds]);
 
     // AI Quota Checker
     const handleCheckAiQuota = useCallback(async () => {
@@ -309,15 +427,24 @@ function App() {
     const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(true);
     const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
     const [isTerminalVisible, setIsTerminalVisible] = useState(false);
+    const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+
+    // Faucet State
+    const [isFaucetOpen, setIsFaucetOpen] = useState(false);
+    const [faucetAnchorRect, setFaucetAnchorRect] = useState<DOMRect | null>(null);
 
     // Layout Toggles
     const toggleLeftSidebar = () => setIsLeftSidebarVisible(!isLeftSidebarVisible);
     const toggleRightSidebar = () => setIsRightSidebarVisible(!isRightSidebarVisible);
     const toggleTerminal = () => setIsTerminalVisible(!isTerminalVisible);
+    const toggleTerminalMaximize = () => {
+        const next = !isTerminalMaximized;
+        setIsTerminalMaximized(next);
+        if (next) setIsTerminalVisible(true);
+    };
 
     // --- Onboarding Tour State ---
-    const [runTour, setRunTour] = useState(false);
-    const [tourSteps] = useState<Step[]>([
+    const ONBOARDING_STEPS: Step[] = [
         {
             target: 'body',
             content: (
@@ -384,7 +511,64 @@ function App() {
             content: 'Customize your layout! Toggle the sidebars, panels, and switch between light and dark themes.',
             placement: 'bottom',
         }
-    ]);
+    ];
+
+    const COMPILE_DEPLOY_STEPS: Step[] = [
+        {
+            target: 'body',
+            content: (
+                <div className="text-left">
+                    <h3 className="text-lg font-bold text-labstx-orange mb-2">Compile & Deploy 🚀</h3>
+                    <p>Learn how to turn your Clarity code into a live smart contract on the Stacks blockchain.</p>
+                </div>
+            ),
+            placement: 'center',
+            disableBeacon: true,
+        },
+        {
+            target: '#view-explorer',
+            content: 'First, open a Clarity contract from the Explorer. Most contracts are located in the "contracts" folder.',
+            placement: 'right',
+        },
+        {
+            target: '#check-button',
+            content: 'Use the Compile button (at the top of the editor) to run a static analysis. It catches syntax errors before you deploy.',
+            placement: 'bottom',
+        },
+        {
+            target: '#deploy-button',
+            content: 'When you are ready, click Deploy. This will open the deployment panel where you can choose your network (Mainnet, Testnet, or Simnet).',
+            placement: 'bottom',
+        },
+        {
+            target: '#terminal-panel',
+            content: 'Watch the terminal for deployment logs. You will see the transaction hash and deployment status here.',
+            placement: 'top',
+        },
+        {
+            target: '#view-activity_history',
+            content: 'Check the Activity History to see all your past deployments and interactions with the blockchain.',
+            placement: 'right',
+        }
+    ];
+
+    const [runTour, setRunTour] = useState(false);
+    const [activeTourId, setActiveTourId] = useState('getting-started');
+    const [tourSteps, setTourSteps] = useState<Step[]>(ONBOARDING_STEPS);
+
+    const handleStartTour = useCallback((tourId: string) => {
+        // Force reset by clearing then setting
+        setRunTour(false);
+        setTimeout(() => {
+            setActiveTourId(tourId);
+            if (tourId === 'getting-started') {
+                setTourSteps(ONBOARDING_STEPS);
+            } else if (tourId === 'compile-deploy') {
+                setTourSteps(COMPILE_DEPLOY_STEPS);
+            }
+            setRunTour(true);
+        }, 10);
+    }, []);
 
     useEffect(() => {
         const hasSeenTour = localStorage.getItem('labstx_has_seen_tour');
@@ -439,6 +623,90 @@ function App() {
         return result;
     };
 
+    // Helper to sync nodes to WebContainer VFS
+    const syncNodesToWebContainer = useCallback(async (nodes: FileNode[]) => {
+        try {
+            const wc = await webContainerService.boot();
+            if (!wc) return;
+            await webContainerService.clearFileSystem();
+            const wcFiles = transformFilesToWC(nodes);
+            await webContainerService.mountFiles(wcFiles);
+            console.log('[WebContainer] VFS synchronized');
+        } catch (err) {
+            console.error('[WebContainer] VFS sync failed:', err);
+        }
+    }, []);
+
+    const handleKillProcess = useCallback((id: string) => {
+        const term = terminals.find(t => t.id === id);
+        if (term?.isProcessRunning && socketRef.current) {
+            socketRef.current.emit('terminal:kill', { sessionId, terminalId: id });
+            setTerminals(prev => prev.map(t => t.id === id ? { ...t, isProcessRunning: false } : t));
+            addTerminalLineToInstance(id, { type: 'error', content: 'Process stopped by user.' });
+        }
+    }, [terminals, sessionId, addTerminalLineToInstance]);
+
+    const handleEnsureNodeTerminal = useCallback(() => {
+        const nodeTerm = terminals.find(t => t.type === 'webcontainer');
+        if (nodeTerm) {
+            setActiveTerminalId(nodeTerm.id);
+        } else {
+            const newId = `term_${Math.random().toString(36).substring(2, 9)}`;
+            setTerminals(prev => [
+                ...prev,
+                { id: newId, title: 'node', lines: [], isProcessRunning: false, type: 'webcontainer' }
+            ]);
+            setActiveTerminalId(newId);
+        }
+        setIsTerminalVisible(true);
+    }, [terminals]);
+
+    const handleAddTerminal = (type: 'server' | 'webcontainer' = 'server') => {
+        const newId = `term_${Math.random().toString(36).substring(2, 9)}`;
+        setTerminals(prev => [
+            ...prev,
+            { id: newId, title: type === 'webcontainer' ? 'node' : 'clarinet', lines: [], isProcessRunning: false, type }
+        ]);
+        setActiveTerminalId(newId);
+    };
+
+    const handleRemoveTerminal = (id: string) => {
+        if (terminals.length <= 1) return;
+
+        // Kill process on backend if running
+        const term = terminals.find(t => t.id === id);
+        if (term?.isProcessRunning && socketRef.current) {
+            socketRef.current.emit('terminal:kill', { sessionId, terminalId: id });
+        }
+
+        setTerminals(prev => {
+            const newTerminals = prev.filter(t => t.id !== id);
+            if (activeTerminalId === id) {
+                setActiveTerminalId(newTerminals[newTerminals.length - 1].id);
+            }
+            return newTerminals;
+        });
+    };
+
+    const handleRunNodeCommand = useCallback((command: string) => {
+        setIsTerminalVisible(true);
+        // Switch to node terminal if it exists
+        const nodeTerm = terminals.find(t => t.type === 'webcontainer');
+        if (nodeTerm) {
+            setActiveTerminalId(nodeTerm.id);
+        } else {
+            handleEnsureNodeTerminal();
+        }
+
+        // We need to trigger execution in TerminalPanel.
+        // I'll add a state to track the command to be executed.
+        setPendingNodeCommand({
+            command,
+            terminalId: nodeTerm ? nodeTerm.id : 'temp', // If temp, the new terminal will pick it up
+            timestamp: Date.now()
+        });
+    }, [terminals, handleEnsureNodeTerminal]);
+
     // --- Deep Link Handling ---
     const handleDeepLink = useCallback(() => {
         const params = new URLSearchParams(window.location.search);
@@ -467,6 +735,13 @@ function App() {
                         setActiveTabGroup('file');
 
                         addTerminalLine({ type: 'success', content: `Imported template from GitHub: ${template.name}` });
+                        syncNodesToWebContainer(newRoot);
+
+                        // If not a clarity template or no Clarinet.toml, switch to node terminal
+                        const hasClarinet = newRoot.some(node => node.name.toLowerCase() === 'clarinet.toml');
+                        if (!hasClarinet || template.type !== 'clarity') {
+                            handleEnsureNodeTerminal();
+                        }
 
                         // Clear URL params
                         window.history.replaceState({}, document.title, window.location.pathname);
@@ -511,6 +786,7 @@ function App() {
                         updatedFiles = [...currentFiles, newFile];
                     }
 
+                    syncNodesToWebContainer(updatedFiles);
                     return { ...prev, [activeWorkspace]: updatedFiles };
                 });
 
@@ -527,7 +803,7 @@ function App() {
                 addTerminalLine({ type: 'error', content: 'Failed to decode snippet code.' });
             }
         }
-    }, [activeWorkspace, addTerminalLine]);
+    }, [activeWorkspace, addTerminalLine, syncNodesToWebContainer, handleEnsureNodeTerminal]);
 
     useEffect(() => {
         // Run deep link handling after a short delay to ensure initial state is settled
@@ -885,6 +1161,7 @@ Include the corrected full and detailed code`;
         setActiveTabGroup('file');
         setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
         addTerminalLine({ type: 'success', content: `Created and switched to workspace: ${name}` });
+        syncNodesToWebContainer(newRoot);
         setOutputLines([]);
         setProblems([]);
     };
@@ -933,6 +1210,7 @@ Include the corrected full and detailed code`;
         setActiveSpecialId('@home');
         setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
         addTerminalLine({ type: 'info', content: `Switched to workspace: ${name}` });
+        syncNodesToWebContainer(nextFiles);
         setOutputLines([]);
         setProblems([]);
     };
@@ -972,6 +1250,43 @@ Include the corrected full and detailed code`;
             addTerminalLine({ type: 'info', content: `Switched to workspace: ${nextWorkspace}` });
         }
     };
+
+    const handleClearAllWorkspaces = async () => {
+        if (!window.confirm("Are you sure you want to CLEAR ALL workspace data? This will delete everything and reset to initial state. This action cannot be undone.")) {
+            return;
+        }
+
+        try {
+            // Reset to initial state
+            const initialWorkspaces = { 'default_workspace': INITIAL_FILES };
+            setWorkspaces(initialWorkspaces);
+            setActiveWorkspace('default_workspace');
+            setHistory([INITIAL_FILES]);
+            setHistoryIndex(0);
+            setOpenFileIds([]);
+            setActiveFileId(null);
+            setActiveTabGroup('special');
+            setActiveSpecialId('@home');
+            setGitState({ modifiedFiles: [], stagedFiles: [], commits: [], branch: 'main' });
+            setOutputLines([]);
+            setProblems([]);
+            setDeployedContracts([]);
+
+            // Clear storage
+            await Promise.all([
+                set('labstx_workspaces', initialWorkspaces),
+                set('labstx_deployed_contracts', []),
+                localStorage.setItem('labstx_active_workspace', 'default_workspace')
+            ]);
+
+            addTerminalLine({ type: 'success', content: 'Successfully cleared all workspace data.' });
+            syncNodesToWebContainer(INITIAL_FILES);
+        } catch (err) {
+            console.error('Failed to clear workspaces:', err);
+            alert('Failed to clear all workspace data. Please try again or clear storage manually in Browser Tools.');
+        }
+    };
+
 
     const handleCloneWorkspace = () => {
         const newName = window.prompt("Enter name for the cloned workspace:", `${activeWorkspace}-copy`);
@@ -1114,6 +1429,15 @@ Include the corrected full and detailed code`;
                     setActiveTabGroup('special');
                     setActiveSpecialId('@home');
                     addTerminalLine({ type: 'success', content: `Workspace imported successfully.` });
+
+                    // Only auto-sync if it contains a Clarinet.toml at the root
+                    const hasClarinet = fileNodes.some(node => node.name.toLowerCase() === 'clarinet.toml');
+                    if (hasClarinet) {
+                        syncNodesToWebContainer(fileNodes);
+                    } else {
+                        addTerminalLine({ type: 'info', content: `Auto-sync skipped: Clarinet.toml not found in project root.` });
+                        handleEnsureNodeTerminal();
+                    }
                 }
             };
             input.click();
@@ -1223,14 +1547,16 @@ Include the corrected full and detailed code`;
 
     const handleEditorChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFileId) return;
-        if (value === activeContent) return; // Ignore identical updates
+        if (value === activeContent) return;
 
-        // Immediate update for the editor's own prop
+        // 1. Immediate UI update for the editor's cursor/text responsiveness
         setActiveContent(value);
 
-        // Debounce the expensive history tree and dirty state updates
+        // Clear existing debounce
         if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+
         historyDebounceRef.current = setTimeout(() => {
+            // Recursive helper to find and update the file content
             const updateContentRecursive = (nodes: FileNode[]): FileNode[] => {
                 return nodes.map(node => {
                     if (node.id === activeFileId) {
@@ -1243,32 +1569,43 @@ Include the corrected full and detailed code`;
                 });
             };
 
+            // 2. Update HISTORY (The Editor's source)
             setHistory(prev => {
                 const newHist = [...prev];
                 const currentFiles = newHist[historyIndex];
                 if (!currentFiles) return prev;
+
                 const updatedFiles = updateContentRecursive(currentFiles);
                 newHist[historyIndex] = updatedFiles;
 
-                // SYNC TO WEBCONTAINER
-                const file = findFile(updatedFiles, activeFileId);
+                // 3. Sync to WEBCONTAINER (while we have the updated tree)
                 const path = getFilePath(updatedFiles, activeFileId);
-                if (file && path) {
+                if (path) {
                     webContainerService.writeFile(path, value);
                 }
 
                 return newHist;
             });
 
-            // Mark as dirty (unsaved)
-            setDirtyFileIds(prev => {
-                if (!prev.includes(activeFileId)) {
-                    return [...prev, activeFileId];
-                }
-                return prev;
+            // 4. Update WORKSPACES (The IndexedDB source)
+            // This is the part that makes persistence work on refresh
+            setWorkspaces(prev => {
+                const currentFiles = prev[activeWorkspace] || [];
+                const updatedFiles = updateContentRecursive(currentFiles);
+                return {
+                    ...prev,
+                    [activeWorkspace]: updatedFiles
+                };
             });
-        }, 300); // 300ms debounce
-    }, [activeFileId, historyIndex, getFilePath, findFile]);
+
+            // 5. Mark as DIRTY
+            setDirtyFileIds(prev =>
+                prev.includes(activeFileId) ? prev : [...prev, activeFileId]
+            );
+
+        }, 300);
+    }, [activeFileId, historyIndex, getFilePath, activeWorkspace, activeContent, webContainerService]);
+
 
     const handleSaveFile = useCallback(() => {
         if (!activeFileId || !dirtyFileIds.includes(activeFileId)) return;
@@ -1313,12 +1650,26 @@ Include the corrected full and detailed code`;
         const zipBlob = await zip.generateAsync({ type: "blob" });
         const res = await ClarityCompiler.initWorkspace(sessionId, zipBlob);
 
+        // Extract entry points for UI interaction if we have an active Clarity file
+        if (res.success && activeFileId) {
+            const activeFile = findFile(filesToSync, activeFileId);
+            if (activeFile && activeFile.type === 'file' && (activeFile.name.endsWith('.clar') || activeFile.name.endsWith('.clarity'))) {
+                const code = activeFile.content || activeContent;
+                const entryPoints = ClarityCompiler.extractEntryPoints(code);
+                if (res.metadata) {
+                    res.metadata.entryPoints = entryPoints;
+                } else {
+                    res.metadata = { entryPoints, contractType: 'clarity' };
+                }
+            }
+        }
+
         // Clear tracked deletions after full sync
         if (res.success) {
             setDeletedFilePaths([]);
         }
         return res;
-    }, [files, sessionId, addTerminalLine]);
+    }, [files, sessionId, addTerminalLine, activeFileId, activeContent, findFile]);
 
     const runDeltaSync = useCallback(async () => {
         const changedFiles: Record<string, string> = {};
@@ -1540,6 +1891,7 @@ Include the corrected full and detailed code`;
             setWorkspaces(prev => ({ ...prev, [activeWorkspace]: newFileNodes }));
             addToHistory(newFileNodes);
             addTerminalLineToInstance(activeTerminalId, { type: 'success', content: 'Workspace synced successfully!' });
+            syncNodesToWebContainer(newFileNodes);
 
             // Restore open files using new IDs matching the old paths
             const newOpenFileIds: string[] = [];
@@ -1573,13 +1925,11 @@ Include the corrected full and detailed code`;
 
             addTerminalLineToInstance(activeTerminalId, { type: 'error', content: errorMessage });
         }
-    }, [activeTerminalId, activeFileId, openFileIds, files, activeWorkspace, sessionId, addTerminalLineToInstance, getFilePath]);
+    }, [activeTerminalId, activeFileId, openFileIds, files, activeWorkspace, sessionId, addTerminalLineToInstance, getFilePath, syncNodesToWebContainer]);
 
 
 
-    const socketRef = useRef<Socket | null>(null);
 
-    const activeTerminal = terminals.find(t => t.id === activeTerminalId) || terminals[0];
 
     const handleSyncWorkspaceRef = useRef(handleSyncWorkspace);
     const addTerminalLineToInstanceRef = useRef(addTerminalLineToInstance);
@@ -1640,32 +1990,7 @@ Include the corrected full and detailed code`;
         }
     }, [terminals.length, sessionId]); // Join on new terminals or session change
 
-    const handleAddTerminal = (type: 'server' | 'webcontainer' = 'server') => {
-        const newId = `term_${Math.random().toString(36).substring(2, 9)}`;
-        setTerminals(prev => [
-            ...prev,
-            { id: newId, title: type === 'webcontainer' ? 'node' : 'clarinet', lines: [], isProcessRunning: false, type }
-        ]);
-        setActiveTerminalId(newId);
-    };
 
-    const handleRemoveTerminal = (id: string) => {
-        if (terminals.length <= 1) return;
-
-        // Kill process on backend if running
-        const term = terminals.find(t => t.id === id);
-        if (term?.isProcessRunning && socketRef.current) {
-            socketRef.current.emit('terminal:kill', { sessionId, terminalId: id });
-        }
-
-        setTerminals(prev => {
-            const newTerminals = prev.filter(t => t.id !== id);
-            if (activeTerminalId === id) {
-                setActiveTerminalId(newTerminals[newTerminals.length - 1].id);
-            }
-            return newTerminals;
-        });
-    };
 
     const handleTerminalCommand = async (command: string) => {
         if (!socketRef.current) return;
@@ -1801,7 +2126,8 @@ Include the corrected full and detailed code`;
     };
 
     const handleDeploySuccess = (contract: DeployedContract) => {
-        setDeployedContracts(prev => [contract, ...prev]);
+        const enrichedContract = { ...contract, activityType: 'deploy' as const };
+        setDeployedContracts(prev => [enrichedContract, ...prev]);
         // Convert deployHash to hex string if it's a Uint8Array
         const deployHashStr = typeof contract.deployHash === 'string'
             ? contract.deployHash
@@ -1835,12 +2161,12 @@ Include the corrected full and detailed code`;
         setActiveTabGroup('special');
     };
 
-    const handleTemplateSelect = (templateNodes: FileNode[], templateName?: string) => {
-        handleLoadTemplate(templateNodes, templateName);
+    const handleTemplateSelect = (templateNodes: FileNode[], templateName?: string, type?: string) => {
+        handleLoadTemplate(templateNodes, templateName, type);
         handleTabClose('@new-project');
     };
 
-    const handleLoadTemplate = (templateNodes: FileNode[], templateName: string = 'unknown') => {
+    const handleLoadTemplate = (templateNodes: FileNode[], templateName: string = 'unknown', type: string = 'clarity') => {
         // Replace current files with template
         setHistory([templateNodes]);
         setHistoryIndex(0);
@@ -1849,9 +2175,26 @@ Include the corrected full and detailed code`;
         setActiveTabGroup('file');
         setActiveSpecialId(null);
         addTerminalLine({ type: 'info', content: `Template [${templateName}] loaded successfully` });
+        syncNodesToWebContainer(templateNodes);
 
-        // Auto-sync template to backend
-        runFullSync(true, templateNodes);
+        // Check for Clarinet.toml or project type
+        const hasClarinet = templateNodes.some(node => node.name.toLowerCase() === 'clarinet.toml');
+        if (!hasClarinet || type !== 'clarity') {
+            handleEnsureNodeTerminal();
+        }
+
+        // Auto-sync template to backend ONLY if it is a Clarity project
+        if (type === 'clarity') {
+            runFullSync(true, templateNodes);
+        } else {
+            addTerminalLine({ type: 'info', content: `Auto-sync skipped for project type: ${type}` });
+        }
+
+        // Update workspaces for persistence
+        setWorkspaces(prev => ({
+            ...prev,
+            [activeWorkspace]: templateNodes
+        }));
 
         // Telemetry Ingest
         fetch('/ide-api/stats/ingest', {
@@ -1868,6 +2211,15 @@ Include the corrected full and detailed code`;
     };
 
     const handleInteracted = (contractName: string, entryPoint: string, network: string, metadata: any = {}) => {
+        // Log to activity history
+        handleAddActivity({
+            name: `${contractName}::${entryPoint}`,
+            contractHash: metadata.contractId || '',
+            deployHash: metadata.txId || '',
+            network: network,
+            activityType: 'call'
+        });
+
         // Telemetry Ingest
         fetch('/ide-api/stats/ingest', {
             method: 'POST',
@@ -1884,6 +2236,18 @@ Include the corrected full and detailed code`;
             })
         }).catch(err => console.error('Telemetry failed:', err));
     };
+
+    const handleAddActivity = useCallback((activity: Partial<DeployedContract> & { name: string, activityType: 'deploy' | 'call' | 'query' }) => {
+        const newActivity: DeployedContract = {
+            id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            timestamp: Date.now(),
+            network: settings.network,
+            contractHash: activity.contractHash || '',
+            deployHash: activity.deployHash || '',
+            ...activity
+        };
+        setDeployedContracts(prev => [newActivity, ...prev]);
+    }, [settings.network]);
 
 
     const handleOpenStats = () => {
@@ -2130,7 +2494,12 @@ Include the corrected full and detailed code`;
         };
         const newFiles = renameRecursive(files);
         addToHistory(newFiles);
-
+        // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+        setWorkspaces(prev => ({
+            ...prev,
+            [activeWorkspace]: newFiles
+        }));
+        // -----------------------------------------
         // Auto-sync renamed state
         runFullSync(true, newFiles);
     };
@@ -2154,7 +2523,7 @@ Include the corrected full and detailed code`;
 
         // 4. Update active file if it was deleted
         if (activeFileId && idsToDelete.includes(activeFileId)) {
-            setActiveFileId(null); // Will be picked up by the next active tab check or simplified logic
+            setActiveFileId(null);
         }
 
         // 5. Remove from tree
@@ -2170,6 +2539,14 @@ Include the corrected full and detailed code`;
         };
 
         const newFiles = deleteRecursive(files);
+
+        // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+        setWorkspaces(prev => ({
+            ...prev,
+            [activeWorkspace]: newFiles
+        }));
+        // -----------------------------------------
+
         addToHistory(newFiles);
 
         // Update Git
@@ -2182,6 +2559,7 @@ Include the corrected full and detailed code`;
         // Auto-sync deleted state
         runFullSync(true, newFiles);
     };
+
 
     const handleMoveNode = (nodeId: string, targetParentId: string) => {
         if (nodeId === targetParentId) return;
@@ -2233,7 +2611,12 @@ Include the corrected full and detailed code`;
 
         addToHistory(newFiles);
         addTerminalLine({ type: 'info', content: `Moved ${nodeToMove.name} to ${targetParentId === 'root' ? 'root' : findFile(files, targetParentId)?.name}` });
-
+        // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+        setWorkspaces(prev => ({
+            ...prev,
+            [activeWorkspace]: newFiles
+        }));
+        // -----------------------------------------
         // Auto-sync moved state
         runFullSync(true, newFiles);
     };
@@ -2286,7 +2669,12 @@ Include the corrected full and detailed code`;
         addToHistory(newFiles);
 
         addTerminalLine({ type: 'success', content: `Imported ${importedFileNames.length} file(s): ${importedFileNames.join(', ')}` });
-
+        // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+        setWorkspaces(prev => ({
+            ...prev,
+            [activeWorkspace]: newFiles
+        }));
+        // -----------------------------------------
         // Auto-sync imported files
         runFullSync(true, newFiles);
 
@@ -2347,7 +2735,13 @@ Include the corrected full and detailed code`;
             setOpenFileIds([]);
             setActiveFileId(null);
             addTerminalLine({ type: 'success', content: `Cloned repository: ${repoName}` });
-
+            syncNodesToWebContainer(fileNodes);
+            // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+            setWorkspaces(prev => ({
+                ...prev,
+                [activeWorkspace]: fileNodes
+            }));
+            // -----------------------------------------
             // Auto-sync cloned repo to backend
             runFullSync(true, fileNodes);
         }
@@ -2493,7 +2887,12 @@ Include the corrected full and detailed code`;
                 }
                 addToHistory(newFiles);
                 addTerminalLine({ type: 'success', content: `Successfully imported ${Object.keys(filesToAdd).length} file(s) from ${type}` });
-
+                // --- ADD THIS BLOCK TO FIX PERSISTENCE ---
+                setWorkspaces(prev => ({
+                    ...prev,
+                    [activeWorkspace]: newFiles
+                }));
+                // -----------------------------------------
                 // Trigger workspace sync
                 runFullSync(true, newFiles);
             } else {
@@ -2617,6 +3016,7 @@ Include the corrected full and detailed code`;
                 onDownloadWorkspace={handleDownloadWorkspace}
                 onImportWorkspace={handleImportWorkspace}
                 onDeleteWorkspace={handleDeleteWorkspace}
+                onClearAllWorkspaces={handleClearAllWorkspaces}
                 onCloneWorkspace={handleCloneWorkspace}
                 theme={theme}
                 toggleTheme={toggleTheme}
@@ -2630,6 +3030,7 @@ Include the corrected full and detailed code`;
                 onGitHubGistCreated={handleGitHubGistCreated}
                 workspaceFiles={collectWorkspaceFiles()}
                 onSync={handleSyncWorkspace}
+                hasClarinet={hasClarinet}
                 aiStats={aiStats}
                 onOpenAccountSettings={handleOpenAccountSettings}
             />
@@ -2669,6 +3070,7 @@ Include the corrected full and detailed code`;
                             onSwitchBranch={handleSwitchBranch}
                             onCreateBranch={handleCreateBranch}
                             wallet={wallet}
+                            hasClarinet={hasClarinet}
                             onWalletConnect={handleWalletConnect}
                             onWalletDisconnect={handleWalletDisconnect}
                             compilationResult={compilationResult}
@@ -2687,9 +3089,17 @@ Include the corrected full and detailed code`;
                             onCollapseAll={handleCollapseAll}
                             onMoveNode={handleMoveNode}
                             onExternalDrop={handleExternalDrop}
+                            onContractClick={handleContractClick}
+                            onOpenSimnetScratchpad={handleOpenSimnetScratchpad}
+                            activeSimnetAccount={activeSimnetAccount}
+                            onSimnetAccountChange={setActiveSimnetAccount}
                             deployedContracts={deployedContracts}
                             setDeployedContracts={setDeployedContracts}
-                            onContractClick={handleContractClick}
+                            onGoToInteract={handleGoToInteract}
+                            onOpenContractCall={handleOpenContractCall}
+                            prefilledContractInfo={prefilledContractInfo}
+                            setPrefilledContractInfo={setPrefilledContractInfo}
+                            onStartTour={handleStartTour}
                         />
                         {/* Left Resizer */}
                         <div
@@ -2702,7 +3112,7 @@ Include the corrected full and detailed code`;
                 <div className="flex-1 flex flex-col min-w-0 bg-caspier-dark">
                     {/* Editor Tabs & Header */}
                     <div className="flex flex-col flex-shrink-0">
-                        {openSpecialIds.length > 0 && (
+                        {!isTerminalMaximized && openSpecialIds.length > 0 && (
                             <EditorTabs
                                 files={files}
                                 openFileIds={openSpecialIds}
@@ -2717,24 +3127,31 @@ Include the corrected full and detailed code`;
                                 onReorder={setOpenSpecialIds}
                                 modifiedFileIds={[]}
                                 dirtyFileIds={[]}
+                                settings={settings}
+                                onUpdateSettings={handleUpdateSettings}
                             />
                         )}
-                        <EditorTabs
-                            files={files}
-                            openFileIds={openFileIds}
-                            activeFileId={activeTabGroup === 'file' ? activeFileId : null}
-                            onSelect={(id) => {
-                                setActiveFileId(id);
-                                setActiveTabGroup('file');
-                            }}
-                            onClose={handleTabClose}
-                            onCloseOthers={handleCloseOthers}
-                            onCloseAll={handleCloseAll}
-                            onReorder={setOpenFileIds}
-                            modifiedFileIds={gitState.modifiedFiles}
-                            dirtyFileIds={dirtyFileIds}
-                        />
+                        {!isTerminalMaximized && (
+                            <EditorTabs
+                                files={files}
+                                openFileIds={openFileIds}
+                                activeFileId={activeTabGroup === 'file' ? activeFileId : null}
+                                onSelect={(id) => {
+                                    setActiveFileId(id);
+                                    setActiveTabGroup('file');
+                                }}
+                                onClose={handleTabClose}
+                                onCloseOthers={handleCloseOthers}
+                                onCloseAll={handleCloseAll}
+                                onReorder={setOpenFileIds}
+                                modifiedFileIds={gitState.modifiedFiles}
+                                dirtyFileIds={dirtyFileIds}
+                                settings={settings}
+                                onUpdateSettings={handleUpdateSettings}
+                            />
+                        )}
                     </div>
+
                     {activeTabGroup === 'file' && activeFileId && (
                         <div className="h-9 flex items-center bg-caspier-black rounded-b-lg border-b border-x border-caspier-border px-4 flex-shrink-0">
                             <div className="flex w-full items-center text-sm">
@@ -2766,6 +3183,8 @@ Include the corrected full and detailed code`;
                                 )}
                             </div>
 
+
+
                             <div className="flex w-auto items-center gap-2">
                                 <Button
                                     id="preview-button"
@@ -2784,31 +3203,33 @@ Include the corrected full and detailed code`;
                                     <EyeIcon className="w-3 h-3" />
                                     <span>Preview</span>
                                 </Button>
-                                <Button
-                                    id="check-button"
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={handleCompile}
-                                    disabled={!isClarityFile}
-                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title={isClarityFile ? "Run Clarinet Check (F5)" : "Open a .clar file to compile"}
-                                >
-                                    <PlayIcon className="w-3 h-3" />
-                                    <span>Compile</span>
-                                </Button>
+                                {hasClarinet && (
+                                    <>
+                                        <Button
+                                            id="check-button"
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={handleCompile}
+                                            disabled={!isClarityFile}
+                                            className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title={isClarityFile ? "Run Clarinet Check (F5)" : "Open a .clar file to compile"}
+                                        >
+                                            <PlayIcon className="w-3 h-3" />
+                                            <span>Compile</span>
+                                        </Button>
 
-                                <Button
-                                    id="sync-button"
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={handleFullSync}
-                                    className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
-                                    title="Perform Full Sync for maximum reliability"
-                                >
-                                    {(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? <SaveIcon className="w-3 h-3" /> : <RefreshIcon className="w-3 h-3" />}
-                                    <span>{(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? "Save" : "Sync"}</span>
-                                </Button>
-
+                                        <Button
+                                            id="sync-button"
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={handleFullSync}
+                                            className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px]"
+                                            title="Perform Full Sync for maximum reliability"
+                                        >
+                                            {(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? <SaveIcon className="w-3 h-3" /> : <RefreshIcon className="w-3 h-3" />}
+                                            <span>{(dirtyFileIds.length > 0 || !!firstRunWorkspaces[activeWorkspace]) ? "Save" : "Sync"}</span>
+                                        </Button>
+                                    </>)}
                                 <Button
                                     id="deploy-button"
                                     variant="primary"
@@ -2820,10 +3241,12 @@ Include the corrected full and detailed code`;
                                     <span>Deploy</span>
                                 </Button>
                             </div>
+
                         </div>
                     )
                     }
                     {/* Monaco Editor or Special Tab — all always mounted, toggled via display */}
+
                     <div className="flex-1 relative min-h-0">
                         {/* Special Tab layer */}
                         <div
@@ -2861,6 +3284,14 @@ Include the corrected full and detailed code`;
                                 onOpenStats={handleOpenStats}
                                 onQuotaReached={setIsAiQuotaReached}
                                 onConnectWallet={handleConnectWallet}
+                                activeSimnetAccount={activeSimnetAccount}
+                                onSimnetAccountChange={setActiveSimnetAccount}
+                                onTemplateProgress={setTemplateProgress}
+                                onAddTerminalLine={addTerminalLine}
+                                onOpenStxerDebugger={handleOpenStxerDebugger}
+                                onDiscoveryImport={handleDiscoveryImport}
+                                onAddActivity={handleAddActivity}
+                                settings={settings}
                             />
 
                         </div>
@@ -2884,6 +3315,7 @@ Include the corrected full and detailed code`;
                                 onCursorChange={handleCursorChange}
                                 activeFileId={activeFileId}
                                 onFileDrop={(files) => handleExternalDrop(files, 'root')}
+                                onRunNodeCommand={handleRunNodeCommand}
                             />
                         </div>
 
@@ -2907,33 +3339,30 @@ Include the corrected full and detailed code`;
                         </div>
                     </div>
 
-                    <div
-                        className='bg-caspier-black'
-                        style={{
-                            display: (activeTabGroup === 'file' && activeFileId) ? 'flex' : 'none',
 
-                        }}
-                    >
-                        <button
-                            className='flex gap-2 text-sm items-center px-3 py-1 bg-blue-600/80 text-white hover:bg-blue-800 border-t-2 border-t-transparent'
-                            onClick={handleExplainCode}>
-                            <MessageSquareIcon className="w-3.5 h-3.5" />
-                            Explain Code with AI
-                        </button>
+                    {!isTerminalMaximized && (activeTabGroup === 'file' && activeFileId) && (
+                        <div className="bg-caspier-black flex">
+                            <button
+                                className='flex gap-2 text-sm items-center px-3 py-1 bg-blue-600/80 text-white hover:bg-blue-800 border-t-2 border-t-transparent'
+                                onClick={handleExplainCode}>
+                                <MessageSquareIcon className="w-3.5 h-3.5" />
+                                Explain Code with AI
+                            </button>
 
-                        <button
-                            className='flex gap-2 text-sm items-center px-3 py-1  bg-yellow-600/80 text-white hover:bg-yellow-800 border-t-2 border-t-transparent'
-                            onClick={handleAnalyseCode}>
-                            <AnalyseIcon className="w-3.5 h-3.5" />
-                            Analyse Code with AI
-                        </button>
-                        <button
-                            className='flex gap-2 text-sm items-center px-3 py-1 bg-red-600/80 text-white hover:bg-red-800 border-t-2 border-t-transparent'
-                            onClick={handleDebugCode}>
-                            <BugIcon className="w-3.5 h-3.5" />
-                            Debug Code with AI
-                        </button>
-                    </div>
+                            <button
+                                className='flex gap-2 text-sm items-center px-3 py-1  bg-yellow-600/80 text-white hover:bg-yellow-800 border-t-2 border-t-transparent'
+                                onClick={handleAnalyseCode}>
+                                <AnalyseIcon className="w-3.5 h-3.5" />
+                                Analyse Code with AI
+                            </button>
+                            <button
+                                className='flex gap-2 text-sm items-center px-3 py-1 bg-red-600/80 text-white hover:bg-red-800 border-t-2 border-t-transparent'
+                                onClick={handleDebugCode}>
+                                <BugIcon className="w-3.5 h-3.5" />
+                                Debug Code with AI
+                            </button>
+                        </div>
+                    )}
                     {isTerminalVisible && (
                         <>
                             {/* Terminal Resizer */}
@@ -2949,13 +3378,18 @@ Include the corrected full and detailed code`;
                                 onSwitchTerminal={setActiveTerminalId}
                                 outputLines={outputLines}
                                 problems={problems}
-                                height={terminalHeight}
+                                height={isTerminalMaximized ? window.innerHeight * 0.5 : terminalHeight}
                                 theme={theme}
-                                onClearTerminal={() => setTerminals(prev => prev.map(t => t.id === activeTerminalId ? { ...t, lines: [] } : t))}
+                                onClearTerminal={handleClearTerminal}
                                 onCommand={handleTerminalCommand}
                                 onLocateProblem={handleLocateProblem}
                                 onOpenStxerDebugger={handleOpenStxerDebugger}
                                 onAskAI={handleAskAIFix}
+                                isMaximized={isTerminalMaximized}
+                                onMaximize={toggleTerminalMaximize}
+                                onKillProcess={handleKillProcess}
+                                pendingCommand={pendingNodeCommand}
+                                onClearPendingCommand={() => setPendingNodeCommand(null)}
                             />
                         </>
                     )}
@@ -2995,48 +3429,136 @@ Include the corrected full and detailed code`;
             </div>
 
             {/* Status Bar */}
-            <div id="status-bar" className="h-6 bg-labstx-orange text-white flex justify-between items-center px-3 text-xs font-bold select-none flex-shrink-0">
-                <div className="flex gap-4">
-                    <span className=' hidden'>{gitState.branch}*</span>
-                    <span>{problems.length} problems</span>
-                </div>
+            <div id="status-bar" className=" bg-labstx-orange text-white flex justify-between items-center text-xs font-bold select-none ">
+
+                {settings?.network === 'testnet' ? (
+                    <button
+                        onClick={(e) => {
+                            setFaucetAnchorRect(e.currentTarget.getBoundingClientRect());
+                            setIsFaucetOpen(true);
+                        }}
+                        className="bg-green-500 text-caspier-black px-2 py-0.5 font-bold shadow-sm flex items-center gap-1 hover:bg-green-600 transition-colors active:scale-95"
+                    >
+                        <svg style={{ width: '15px', height: 'auto' }} width="10" height="11" viewBox="0 0 8 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M2.55905 3.64548L2.55877 3.64536L2.56192 3.63986C2.57785 3.61208 2.57713 3.57435 2.55558 3.54137C2.55556 3.54134 2.55553 3.54131 2.55551 3.54128L1.13958 1.40584L1.13956 1.40585L1.13878 1.4046C1.08893 1.3257 1.0816 1.22654 1.12806 1.14305C1.17433 1.05552 1.26129 1.00894 1.35202 1.00894H1.90321C1.98538 1.00894 2.06506 1.05068 2.11521 1.1244L2.11571 1.12514L3.76929 3.62764L3.76943 3.62786C3.79889 3.67282 3.84522 3.69696 3.90022 3.69696H4.10798C4.1605 3.69696 4.20843 3.67052 4.23941 3.62688L5.88328 1.12195C5.93083 1.04431 6.01706 1.00462 6.09651 1.00462H6.6477C6.73867 1.00462 6.83105 1.05593 6.87291 1.14544C6.91822 1.23329 6.90558 1.33081 6.86163 1.4035L6.86168 1.40353L6.86018 1.40579L5.44404 3.54585L5.44407 3.54587L5.44268 3.54782C5.42357 3.57456 5.42137 3.61121 5.4378 3.63986L5.43889 3.64184C5.45731 3.67666 5.48585 3.69264 5.51988 3.69264H7.68649C7.83138 3.69264 7.93971 3.81089 7.93971 3.94915V4.41514C7.93971 4.55971 7.82517 4.67165 7.68649 4.67165H0.313233C0.168346 4.67165 0.060009 4.5534 0.060009 4.41514V3.94915C0.060009 3.81553 0.15774 3.71064 0.282871 3.69328H7.68649"
+                                fill={theme === 'dark' ? 'black' : 'white'}
+                            />
+                            <path
+                                d="M5.88758 9.46319L4.29882 7.0588L2.10737 9.47262L2.05161 9.43609L2.10723 9.47284L2.10736 9.47265C2.0611 9.54324 1.98501 9.58473 1.89897 9.58473H1.34778C1.25388 9.58473 1.1682 9.531 1.12337 9.44546C1.07712 9.35721 1.08964 9.25897 1.13385 9.18586L1.13381 9.18583L1.1353 9.18357L2.55144 7.0435L2.55141 7.04348L2.5528 7.04153C2.57142 7.01548 2.57497 6.98224 2.55659 6.94752L2.55649 6.94758L2.55481 6.94387C2.54122 6.91391 2.51566 6.89671 2.4756 6.89671H0.313233C0.168346 6.89671 0.060009 6.77847 0.060009 6.6402V6.17422C0.060009 6.02964 0.174548 5.91771 0.313233 5.91771H0.330193H7.68649C7.83138 5.91771 7.93971 6.03595 7.93971 6.17422V6.6402C7.93971 6.78478 7.82517 6.89671 7.68649 6.89671H5.52836C5.49709 6.89671 5.46674 6.91448 5.44685 6.94851C5.42953 6.98198 5.43177 7.01608 5.45263 7.04798C5.45265 7.04801 5.45267 7.04804 5.45269 7.04808L6.86421 9.18325C6.91612 9.25989 6.92185 9.36448 6.87543 9.44716C6.83038 9.52739 6.74522 9.58042 6.65194 9.58042H6.10075C6.02134 9.58042 5.93514 9.54077 5.88758 9.46319Z"
+                                fill={theme === 'dark' ? 'black' : 'white'}
+                            />
+                        </svg>
+
+                        Get Testnet Airdrop
+                    </button>
+                ) : (<div className="flex" />)}
+
                 <div className="flex items-center justify-center gap-4">
+
+                    {templateProgress !== null && (
+                        <div className="flex items-center gap-2 mr-2 px-2 py-0.5 rounded-sm  border-white/20 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <span className="text-[9px] uppercase tracking-tighter animate-pulse">Template Loading</span>
+                            <div className="w-20 h-1.5 bg-white/20 rounded-full overflow-hidden border border-white/10">
+                                <div
+                                    className="h-full bg-white transition-all duration-300 ease-out shadow-[0_0_8px_rgba(255,255,255,0.5)]"
+                                    style={{ width: `${templateProgress}%` }}
+                                />
+                            </div>
+                            <span className="text-[9px] font-black min-w-[24px]">{templateProgress}%</span>
+                        </div>
+                    )}
                     <a
                         href="https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:underline cursor-pointer flex items-center gap-1 text-white border border-white/30 px-2 py-0.5 rounded-sm bg-white/10 hover:bg-white/20 transition-all mr-2"
+                        className="hover:underline cursor-pointer flex items-center gap-1 text-black border border-white/30 px-2 py-0.5  bg-green-500 hover:bg-green-600 transition-all mr-2"
                     >
                         ✨ Join Early Access
                     </a>
-                    <button
-                        onClick={() => setRunTour(true)}
-                        className="hover:underline cursor-pointer"
-                    >
-                        🚀 Start Tour
-                    </button>
+                    <div className="flex gap-4">
+                        <span className=' hidden'>{gitState.branch}*</span>
+                        <span>{problems.length === 0 ? 'No problems' : `${problems.length} problems`}</span>
+                    </div>
+                    {wallet.connected && wallet.type !== 'none' && (
+                        <span className="bg-yellow-500 text-black px-2 py-0.5  font-bold shadow-sm flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-black rounded-full animate-pulse"></span>
+                            Connected to
+                            {wallet.type === 'xverse' ?
+                                <p className='flex gap-1 items-center'>  <img src="/xverse.png" alt="Xverse" className="h-4 w-4 mr-1" />Xverse</p>
+                                : wallet.type === 'leather' ? <p className='flex gap-1 items-center'>  <img src="/leather.svg" alt="Leather" className="h-4 w-4 mr-1" />Leather</p> : <p className='flex gap-1 items-center'>  <img src="/leather.svg" alt="Leather" className="h-4 w-4 mr-1" />Simnet</p>}
+                        </span>
+                    )}
                     <span>Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}</span>
                     <select
                         value={lineEnding}
                         onChange={(e) => setLineEnding(e.target.value as 'LF' | 'CRLF')}
-                        className="bg-transparent border-none outline-none cursor-pointer hover:underline font-bold"
+                        className={` hidden border-none outline-none cursor-pointer hover:underline font-bold  `}
                     >
-                        <option value="LF" className="bg-caspier-black text-white">LF</option>
-                        <option value="CRLF" className="bg-caspier-black text-white">CRLF</option>
+                        <option value="LF" className={theme === 'light' ? 'text-white' : 'text-black'}>LF</option>
+                        <option value="CRLF" className={theme === 'light' ? 'text-white' : 'text-black'}>CRLF</option>
                     </select>
-                    <span>{activeLanguage.toUpperCase()}</span>
+
+                    <input type="hidden" name="lineEnding" value={lineEnding} />
+
+                    {/* 2. The Trigger Button displaying the currently selected value */}
                     <button
-                        onClick={handleOpenChangelog}
-                        className="hover:underline cursor-pointer border border-white/20 px-2 rounded-sm ml-2 bg-white/10 hover:bg-white/20 transition-colors"
+                        type="button"
+                        onClick={() => dialogRef.current?.showModal()}
+                        className="border-none outline-none cursor-pointer hover:underline font-bold bg-transparent"
                     >
-                        📜 Changelog
+                        {lineEnding}
                     </button>
-                    <span>LabSTX v1.2.0</span>
+
+                    {/* 3. The Dialog - 'm-auto' is crucial here to force Tailwind to center it */}
+                    <dialog
+                        ref={dialogRef}
+                        onClick={(e) => e.target === dialogRef.current && dialogRef.current?.close()}
+                        className="m-auto rounded-lg p-0 backdrop:bg-black/50 backdrop:backdrop-blur-sm shadow-2xl border border-caspier-border"
+                    >
+                        <div className={`flex flex-col min-w-[80vh] ${theme === 'light' ? ' text-black' : 'bg-caspier-black text-white'}`}>
+
+                            <div className="px-4 py-3 border-b border-gray-200/10 opacity-70">
+                                <h3 className="text-sm font-semibold m-0">Select End of Line Sequence</h3>
+                            </div>
+
+                            <div className="p-2 flex flex-col gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelect('LF')}
+                                    className={`text-left px-4 py-2 rounded text-sm transition-colors flex justify-between items-center ${lineEnding === 'LF'
+                                        ? 'bg-blue-500 text-white'
+                                        : 'hover:bg-gray-500/20'
+                                        }`}
+                                >
+                                    <span>LF</span>
+                                    <span className="opacity-50 text-xs">Clarity Standard</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelect('CRLF')}
+                                    className={`text-left px-4 py-2 rounded text-sm transition-colors flex justify-between items-center ${lineEnding === 'CRLF'
+                                        ? 'bg-blue-500 text-white'
+                                        : 'hover:bg-gray-500/20'
+                                        }`}
+                                >
+                                    <span>CRLF</span>
+
+                                </button>
+                            </div>
+
+                        </div>
+                    </dialog>
+                    <span>{activeLanguage.toUpperCase()}</span>
+
+                    <span className='mr-2'>LabSTX v1.2.1</span>
                 </div>
             </div>
 
             {/* Product Tour */}
             <Joyride
+                key={activeTourId}
                 steps={tourSteps}
                 run={runTour}
                 continuous
@@ -3087,7 +3609,31 @@ Include the corrected full and detailed code`;
             )}
 
             {/* Intro Loading Page */}
-            {loading && <IntroLoading theme={theme} onComplete={() => setLoading(false)} />}
+            {(loading || !isStateLoaded) && (
+                <IntroLoading
+                    theme={theme}
+                    onComplete={() => {
+                        if (isStateLoaded) {
+                            setLoading(false);
+                        } else {
+                            // If state isn't loaded yet, we'll check again in a short interval
+                            const checkInterval = setInterval(() => {
+                                if (isStateLoaded) {
+                                    setLoading(false);
+                                    clearInterval(checkInterval);
+                                }
+                            }, 100);
+                        }
+                    }}
+                />
+            )}
+
+            <FaucetPopover
+                isOpen={isFaucetOpen}
+                onClose={() => setIsFaucetOpen(false)}
+                anchorRect={faucetAnchorRect}
+                connectedAddress={wallet?.address}
+            />
         </div>
     );
 }

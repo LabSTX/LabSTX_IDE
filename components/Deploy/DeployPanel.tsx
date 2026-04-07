@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FileNode, WalletConnection, DeployedContract, CompilationResult, ProjectSettings } from '../../types';
 import WalletConnectionComponent from './WalletConnection';
 import { Button } from '../UI/Button';
@@ -13,38 +13,41 @@ import {
   ClarityValue, serializeCV, deserializeCV, cvToValue
 } from '@stacks/transactions';
 import { bytesToHex, hexToBytes } from '@stacks/common';
+import { runExclusively, getAccounts, getAccountBalance } from '../../services/stacks/simnet';
+import { getProviders } from 'sats-connect';
+import { XIcon, AlertCircle } from 'lucide-react';
 
 const formatClarityType = (type: any): string => {
   if (!type) return 'unknown';
   if (typeof type === 'string') return type;
-  
+
   if (type.uint128 !== undefined) return 'uint128';
   if (type.int128 !== undefined) return 'int128';
   if (type.bool !== undefined) return 'bool';
   if (type.principal !== undefined) return 'principal';
   if (type.standard_principal !== undefined) return 'principal';
   if (type.contract_principal !== undefined) return 'contract_principal';
-  
+
   if (type['string-ascii'] !== undefined) {
     return `string-ascii ${type['string-ascii'].length}`;
   }
   if (type['string-utf8'] !== undefined) {
     return `string-utf8 ${type['string-utf8'].length}`;
   }
-  
+
   if (type.list !== undefined) {
     return `list (${formatClarityType(type.list.type)})`;
   }
-  
+
   if (type.tuple !== undefined) {
     const fields = type.tuple.map((f: any) => `${f.name}: ${formatClarityType(f.type)}`).join(', ');
     return `tuple (${fields})`;
   }
-  
+
   if (type.optional !== undefined) {
     return `optional (${formatClarityType(type.optional)})`;
   }
-  
+
   if (type.response !== undefined) {
     const okType = formatClarityType(type.response.ok);
     const errType = formatClarityType(type.response.error);
@@ -52,6 +55,14 @@ const formatClarityType = (type: any): string => {
   }
 
   return typeof type === 'object' ? JSON.stringify(type) : String(type);
+};
+
+const formatCVValue = (val: any): string => {
+  if (val === undefined || val === null) return 'none';
+  if (typeof val === 'object') {
+    return JSON.stringify(val, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2);
+  }
+  return String(val);
 };
 
 interface DeployPanelProps {
@@ -70,6 +81,9 @@ interface DeployPanelProps {
   onFileSelect?: (fileId: string) => void;
   deployedContracts: DeployedContract[];
   setDeployedContracts: React.Dispatch<React.SetStateAction<DeployedContract[]>>;
+  activeSimnetAccount?: string;
+  onSimnetAccountChange?: (address: string) => void;
+  onGoToInteract?: (hash: string) => void;
 }
 
 const DeployPanel: React.FC<DeployPanelProps> = ({
@@ -87,13 +101,16 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   onUpdateSettings,
   onFileSelect,
   deployedContracts,
-  setDeployedContracts
+  setDeployedContracts,
+  activeSimnetAccount = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+  onSimnetAccountChange,
+  onGoToInteract
 }) => {
   // Use global settings network as source of truth
-  const network = settings?.network || 'testnet';
+  const network: 'testnet' | 'mainnet' | 'mocknet' | 'simnet' = settings?.network || 'testnet';
 
   // Local function to update network (updates global settings)
-  const setNetwork = (newNet: 'testnet' | 'mainnet') => {
+  const setNetwork = (newNet: 'testnet' | 'mainnet' | 'simnet') => {
     if (onUpdateSettings) {
       onUpdateSettings('network', newNet);
     }
@@ -106,32 +123,61 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   const [isAlreadyDeployed, setIsAlreadyDeployed] = useState(false);
   const [checkingDeployment, setCheckingDeployment] = useState(false);
   const [contractInterface, setContractInterface] = useState<any>(null);
+  const [xverseWarningHandler, setXverseWarningHandler] = useState<{ resolve: (v: boolean) => void } | null>(null);
 
   // Advanced params
   const [customFee, setCustomFee] = useState<string>('');
   const [customNonce, setCustomNonce] = useState<string>('');
-
-  // Interaction State
-  const [interactContractHash, setInteractContractHash] = useState('');
-  const [entryPoint, setEntryPoint] = useState('');
-  const [argumentsJson, setArgumentsJson] = useState('{}');
-  const [functionArgs, setFunctionArgs] = useState<Record<string, string>>({});
-  const [showJsonInput, setShowJsonInput] = useState(false);
-  const [keyName, setKeyName] = useState('');
-  const [requestingTokens, setRequestingTokens] = useState(false);
-
-  // Advanced Security & Units
-  const [feeUnit, setFeeUnit] = useState<'STX' | 'uSTX'>('uSTX');
+  const [feeUnit, setFeeUnit] = useState<'uSTX' | 'STX'>('STX');
   const [enablePostCondition, setEnablePostCondition] = useState(false);
-  const [postConditionAmount, setPostConditionAmount] = useState('0');
+  const [postConditionAmount, setPostConditionAmount] = useState('');
+  const [interactContractHash, setInteractContractHash] = useState('');
 
   // Storage Explorer
-  const [queryValue, setQueryValue] = useState<string | null>(null);
-  const [loadingQuery, setLoadingQuery] = useState(false);
+  const [snippet, setSnippet] = useState('');
+
+  // Virtual Wallet for Simnet
+  const isSimnet = network === 'simnet';
+  const [simnetAccounts, setSimnetAccounts] = useState<string[]>([]);
+  const [simnetBalances, setSimnetBalances] = useState<Record<string, string>>({});
+  const simnetDeployer = activeSimnetAccount;
+
+
+  // Callback for fetching Simnet info
+  const fetchSimnetInfo = useCallback(async () => {
+    if (!isSimnet) return;
+    try {
+      const accounts = await getAccounts();
+      setSimnetAccounts(accounts);
+
+      const balances: Record<string, string> = {};
+      for (const addr of accounts) {
+        balances[addr] = await getAccountBalance(addr);
+      }
+      setSimnetBalances(balances);
+
+      // Also ensure the primary balance state is sync'd
+      if (simnetDeployer) {
+        const bal = await getAccountBalance(simnetDeployer);
+        setBalance(bal);
+      }
+    } catch (err) {
+      console.error("Failed to fetch Simnet info:", err);
+    }
+  }, [isSimnet, simnetDeployer]);
+
+  // Initial Fetch & Network Toggle
+  useEffect(() => {
+    if (isSimnet) {
+      fetchSimnetInfo();
+    }
+  }, [isSimnet, fetchSimnetInfo]);
 
 
   // Sync wallet address with current network toggle
   useEffect(() => {
+    if (isSimnet) return; // Don't sync wallet address to simnet here
+
     if (wallet.connected && onWalletConnect) {
       // Prioritize addresses map if available
       let correctAddress = '';
@@ -163,6 +209,12 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   // Fetch balance
   useEffect(() => {
     const fetchBalance = async () => {
+      if (isSimnet) {
+        const bal = await getAccountBalance(simnetDeployer);
+        setBalance(bal);
+        return;
+      }
+
       if (wallet.connected) {
         // Use a temp balance reset to indicate loading
         setBalance('...');
@@ -242,14 +294,63 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
   useEffect(() => {
     const checkStatus = async () => {
       const selectedFile = clarityFiles.find(f => f.id === selectedFileId);
-      if (selectedFile && wallet.address && wallet.connected) {
+      if (!selectedFile) return;
+
+      const currentContractName = selectedFile.name.replace('.clar', '');
+
+      if (isSimnet) {
+        // For Simnet, we check the local deployedContracts list
+        const localDeployment = (deployedContracts || []).find(c =>
+          c.name === currentContractName &&
+          c.network === 'simnet' &&
+          c.originalFileId === selectedFileId &&
+          c.contractHash.startsWith(simnetDeployer)
+        );
+
+        if (localDeployment) {
+          setIsAlreadyDeployed(true);
+
+
+          // Try to derive ABI from compilation if available
+          if (compilationResult?.metadata) {
+            // Map entryPoints to functions and normalize access strings for UI consistency
+            const mappedFunctions = (compilationResult.metadata.entryPoints || []).map(ep => ({
+              ...ep,
+              access: ep.access === 'Public' ? 'public' :
+                ep.access === 'ReadOnly' ? 'read_only' : ep.access.toLowerCase()
+            }));
+            setContractInterface({ functions: mappedFunctions });
+          }
+        } else {
+          setIsAlreadyDeployed(false);
+          // Even if not deployed, for Simnet we can show the functions from compilation to help user
+          if (compilationResult?.metadata) {
+            const mappedFunctions = (compilationResult.metadata.entryPoints || []).map(ep => ({
+              ...ep,
+              access: ep.access === 'Public' ? 'public' :
+                ep.access === 'ReadOnly' ? 'read_only' : ep.access.toLowerCase()
+            }));
+            setContractInterface({ functions: mappedFunctions });
+
+            // Convenience: Auto-fill interact hash for Simnet even if not yet deployed
+            const suggestedHash = `${simnetDeployer}.${currentContractName}`;
+            if (!interactContractHash || interactContractHash.split('.').length < 2) {
+              setInteractContractHash(suggestedHash);
+            }
+          } else {
+            setContractInterface(null);
+          }
+        }
+        return;
+      }
+
+      if (wallet.address && wallet.connected) {
         setCheckingDeployment(true);
-        const contractName = selectedFile.name.replace('.clar', '');
-        const exists = await StacksWalletService.checkContractExists(wallet.address, contractName, network);
+        const exists = await StacksWalletService.checkContractExists(wallet.address, currentContractName, network);
         setIsAlreadyDeployed(exists);
 
         if (exists) {
-          const abi = await StacksWalletService.getContractInterface(wallet.address, contractName, network);
+          const abi = await StacksWalletService.getContractInterface(wallet.address, currentContractName, network);
           setContractInterface(abi);
         } else {
           setContractInterface(null);
@@ -262,26 +363,9 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
       }
     };
     checkStatus();
-  }, [selectedFileId, wallet.address, wallet.connected, network, clarityFiles]);
+  }, [selectedFileId, wallet.address, wallet.connected, network, clarityFiles, deployedContracts, isSimnet, compilationResult, activeSimnetAccount]);
 
   // Sync function arguments when entry point changes
-  useEffect(() => {
-    if (contractInterface && entryPoint) {
-      const func = contractInterface.functions.find((f: any) => f.name === entryPoint);
-      if (func && func.args) {
-        const initialArgs: Record<string, string> = {};
-        func.args.forEach((arg: any) => {
-          initialArgs[arg.name] = '';
-        });
-        setFunctionArgs(initialArgs);
-      } else {
-        setFunctionArgs({});
-      }
-    } else {
-      setFunctionArgs({});
-    }
-  }, [entryPoint, contractInterface]);
-
   const handleDeploy = async () => {
     const selectedFile = clarityFiles.find(f => f.id === selectedFileId);
     if (!selectedFile || !selectedFile.content) {
@@ -289,7 +373,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
       return;
     }
 
-    if (!wallet.connected) {
+    if (!wallet.connected && !isSimnet) {
       console.error('ERROR: Please connect a wallet first');
       return;
     }
@@ -306,6 +390,11 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
     if (!/^[a-z_][a-z0-9-_]*$/.test(contractName.toLowerCase())) {
       alert('Invalid contract name. Use only letters, numbers, dashes, and underscores. Cannot start with a number.');
+      return;
+    }
+
+    if (isSimnet) {
+      await handleSimnetDeploy(selectedFile, contractName);
       return;
     }
 
@@ -376,52 +465,86 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         });
       }
 
-      const result = await request('stx_deployContract', deployParams);
+      //const result = await request('stx_deployContract', deployParams);
+      const providers = getProviders();
+      const isXverseInstalled = providers.find(p => p.id === 'XverseProviders.BitcoinProvider');
+      const isLeatherInstalled = providers.find(p => p.id === 'LeatherProvider');
+      let response;
+      console.log('providers detected', providers);
 
-        if (result && result.txid) {
-          console.log('Stacks Transaction broadcast:', result);
+      // FIX: Use 'wallet.type' to ensure only the wallet you are logged into fires.
+      // If you don't check wallet.type, and both are installed, both popups try to open.
+      if (wallet.type === 'leather' && isLeatherInstalled) {
+        response = await request(
+          { provider: (window as any).LeatherProvider || (window as any).StacksProvider },
+          'stx_deployContract',
+          deployParams
+        );
+      }
+      else if (wallet.type === 'xverse' && isXverseInstalled) {
+        // FIX: Xverse path is typically window.XverseProviders.Stacks
+        setDeploying(false); // Stop broadcasting UI
+        const proceed = await new Promise<boolean>((resolve) => {
+          setXverseWarningHandler({ resolve });
+        });
+        setXverseWarningHandler(null);
 
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'success',
-              content: `Contract deployment broadcasted! TXID: ${result.txid.substring(0, 16)}...`
-            });
-          }
+        if (!proceed) return;
 
-          const newContract: DeployedContract = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: contractName,
-            contractHash: `${wallet.address}.${contractName}`,
-            deployHash: result.txid,
-            network: network,
-            timestamp: Date.now(),
-            originalFileId: selectedFileId,
-            entryPoints: compilationResult?.metadata?.entryPoints || []
-          };
+        setDeploying(true); // Resume broadcasting UI
+        const xverseProvider = (window as any).XverseProviders?.Stacks || (window as any).BitcoinProvider;
 
-          if (onDeploySuccess) {
-            onDeploySuccess(newContract);
-          }
+        response = await request(
+          { provider: xverseProvider },
+          'stx_deployContract',
+          deployParams
+        );
+      }
 
-          // Telemetry Ingest for success
-          fetch('/ide-api/stats/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  eventType: 'DEPLOYMENT',
-                  wallet: wallet.address || 'unconnected',
-                  payload: {
-                      contractName: contractName,
-                      network: network,
-                      status: 'success',
-                      metadata: {
-                          deployHash: result.txid,
-                          gas: '0.00 STX' // Placeholder as we don't have final gas yet
-                      }
-                  }
-              })
-          }).catch(err => console.error('Telemetry failed:', err));
+      if (response && response.txid) {
+        console.log('Stacks Transaction broadcast:', response);
+
+        if (onAddTerminalLine) {
+          onAddTerminalLine({
+            type: 'success',
+            content: `Contract deployment broadcasted! TXID: ${response.txid.substring(0, 16)}...`
+          });
         }
+
+        const newContract: DeployedContract = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: contractName,
+          contractHash: `${wallet.address}.${contractName}`,
+          deployHash: response.txid,
+          network: network,
+          timestamp: Date.now(),
+          originalFileId: selectedFileId,
+          entryPoints: compilationResult?.metadata?.entryPoints || []
+        };
+
+        if (onDeploySuccess) {
+          onDeploySuccess(newContract);
+        }
+
+        // Telemetry Ingest for success
+        fetch('/ide-api/stats/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: 'DEPLOYMENT',
+            wallet: wallet.address || 'unconnected',
+            payload: {
+              contractName: contractName,
+              network: network,
+              status: 'success',
+              metadata: {
+                deployHash: response.txid,
+                gas: '0.00 STX' // Placeholder as we don't have final gas yet
+              }
+            }
+          })
+        }).catch(err => console.error('Telemetry failed:', err));
+      }
       setDeploying(false);
 
     } catch (error: any) {
@@ -432,22 +555,22 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
 
       // Telemetry Ingest for failure (if not cancelled)
       if (!isCancel) {
-          fetch('/ide-api/stats/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  eventType: 'DEPLOYMENT',
-                  wallet: wallet.address || 'unconnected',
-                  payload: {
-                      contractName: contractName,
-                      network: network,
-                      status: 'failure',
-                      metadata: {
-                          error: error.message || 'Unknown error'
-                      }
-                  }
-              })
-          }).catch(err => console.error('Telemetry failed:', err));
+        fetch('/ide-api/stats/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: 'DEPLOYMENT',
+            wallet: wallet.address || 'unconnected',
+            payload: {
+              contractName: contractName,
+              network: network,
+              status: 'failure',
+              metadata: {
+                error: error.message || 'Unknown error'
+              }
+            }
+          })
+        }).catch(err => console.error('Telemetry failed:', err));
       }
 
       if (isCancel) {
@@ -469,418 +592,155 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
     }
   };
 
-  const handleCallContract = async () => {
-    if (!interactContractHash || !entryPoint) {
-      alert('Please provide contract hash and function name');
-      return;
-    }
-
-    // Helper to convert JS values to Clarity Values
-    const toCV = (val: any): ClarityValue => {
-      if (typeof val === 'number') return uintCV(val);
-      if (typeof val === 'boolean') return val ? trueCV() : falseCV();
-      if (val === null) return noneCV();
-      if (typeof val === 'string') {
-        if ((val.startsWith('SP') || val.startsWith('ST')) && (val.includes('.') || val.length >= 39)) {
-          return principalCV(val);
-        }
-        return stringUtf8CV(val);
-      }
-      if (Array.isArray(val)) return listCV(val.map(toCV));
-      if (typeof val === 'object') {
-        const tupleData: any = {};
-        for (const [k, v] of Object.entries(val)) {
-          tupleData[k] = toCV(v);
-        }
-        return tupleCV(tupleData);
-      }
-      return stringUtf8CV(String(val));
-    };
-
-    try {
-      const parts = interactContractHash.split('.');
-      if (parts.length !== 2) throw new Error('Invalid contract hash format. Expected: principal.contract-name');
-
-      const [targetAddress, targetContractName] = parts;
-
-      let cvArgs: ClarityValue[] = [];
-      
-      if (showJsonInput) {
-        try {
-          const trimmedJson = argumentsJson.trim();
-          if (!trimmedJson || trimmedJson === '{}' || trimmedJson === '[]') {
-            cvArgs = [];
-          } else {
-            const parsed = JSON.parse(trimmedJson);
-            if (Array.isArray(parsed)) {
-              cvArgs = parsed.map(toCV);
-            } else {
-              cvArgs = [toCV(parsed)];
-            }
-          }
-        } catch (e) {
-          console.warn('Arguments parsing failed, sending empty args');
-        }
-      } else {
-        // Use auto-generated arguments
-        const func = contractInterface?.functions.find((f: any) => f.name === entryPoint);
-        if (func && func.args) {
-          cvArgs = func.args.map((argDef: any) => {
-            const rawValue = functionArgs[argDef.name] || '';
-            const typeStr = formatClarityType(argDef.type);
-
-            // Conversion logic based on type
-            if (typeStr === 'uint128') return uintCV(rawValue || 0);
-            if (typeStr === 'int128') return intCV(rawValue || 0);
-            if (typeStr === 'bool') return rawValue.toLowerCase() === 'true' ? trueCV() : falseCV();
-            if (typeStr.includes('principal')) {
-              return principalCV(rawValue);
-            }
-            if (typeStr.startsWith('string-ascii')) return stringAsciiCV(rawValue);
-            if (typeStr.startsWith('string-utf8')) return stringUtf8CV(rawValue);
-            
-            // Fallback for complex types or others
-            try {
-              if (typeof rawValue === 'string' && (rawValue.startsWith('{') || rawValue.startsWith('['))) {
-                return toCV(JSON.parse(rawValue));
-              }
-            } catch (e) {}
-            
-            return stringUtf8CV(rawValue);
-          });
-        }
-      }
-
-      console.log('Final Clarity Arguments:', cvArgs);
-
-      // Network check
-      if (wallet.network && wallet.network !== network) {
-        const proceed = confirm(`Network Mismatch: Your wallet is on ${wallet.network} but the IDE is set to ${network}. This transaction will likely fail. Proceed anyway?`);
-        if (!proceed) return;
-      }
-
-      const stxNetwork = network === 'mainnet' ? STACKS_MAINNET : network === 'testnet' ? STACKS_TESTNET : STACKS_MOCKNET;
-
-      if (onAddTerminalLine) {
-        onAddTerminalLine({
-          type: 'command',
-          content: `Broadcasting contract call: ${interactContractHash}::${entryPoint}...`,
-          data: {
-            args: argumentsJson
-          }
-        });
-        onAddTerminalLine({
-          type: 'info',
-          content: `Debug: Target: ${targetAddress}.${targetContractName} | Function: ${entryPoint} | Network: ${network}`
-        });
-      }
-
-      // Post-Conditions
-      const postConditions: any[] = [];
-      if (enablePostCondition && postConditionAmount && parseFloat(postConditionAmount) > 0) {
-        try {
-          // Import necessary functions if they weren't imported
-          const { createSTXPostCondition, FungibleConditionCode } = await import('@stacks/transactions');
-          const microStx = Math.floor(parseFloat(postConditionAmount) * 1000000);
-
-          const postCondition = createSTXPostCondition(
-            wallet.address!,
-            FungibleConditionCode.LessEqual,
-            microStx.toString()
-          );
-          postConditions.push(postCondition);
-          console.log(`Added STX Post-Condition: User transfers <= ${postConditionAmount} STX`);
-        } catch (pcErr) {
-          console.error('Failed to create post-condition:', pcErr);
-        }
-      }
-
-      await openContractCall({
-        contractAddress: targetAddress.trim(),
-        contractName: targetContractName.trim(),
-        functionName: entryPoint.trim(),
-        functionArgs: cvArgs,
-        network: stxNetwork,
-        postConditions,
-        appDetails: {
-          name: 'LabSTX IDE',
-          icon: window.location.origin + '/logo192.png',
-        },
-        onFinish: (data) => {
-          console.log('Contract call broadcast:', data);
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'success',
-              content: `Contract call broadcasted! TXID: ${data.txId}`
-            });
-            onAddTerminalLine({
-              type: 'info',
-              content: 'Debug with stxer.xyz',
-              data: { action: 'debug', txId: data.txId }
-            });
-          }
-          
-          if (onInteracted) {
-              onInteracted(interactContractHash, entryPoint, network, { txId: data.txId });
-          }
-
-          // Telemetry Ingest for Interaction
-          fetch('/ide-api/stats/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  eventType: 'INTERACTION',
-                  wallet: wallet.address || 'unconnected',
-                  payload: {
-                      contractName: interactContractHash,
-                      functionName: entryPoint,
-                      network: network,
-                      status: 'success',
-                      metadata: {
-                          txId: data.txId
-                      }
-                  }
-              })
-          }).catch(err => console.error('Telemetry failed:', err));
-        },
-        onCancel: () => {
-          console.log('Call cancelled');
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'info',
-              content: 'Contract call cancelled by user.'
-            });
-          }
-        }
+  const handleSimnetDeploy = async (selectedFile: FileNode, name: string) => {
+    setDeploying(true);
+    if (onAddTerminalLine) {
+      onAddTerminalLine({
+        type: 'command',
+        content: `Broadcasting local deployment to Simnet: ${name}...`
       });
-    } catch (err: any) {
-      alert(`Interaction Error: ${err.message}`);
-      if (onAddTerminalLine) {
-        onAddTerminalLine({
-          type: 'error',
-          content: `Contract call failed: ${err.message}`
-        });
-      }
     }
-  };
-
-
-
-  const clearHistory = () => {
-    if (confirm('Clear all deployment history?')) {
-      setDeployedContracts([]);
-    }
-  };
-
-  const handleQueryState = async () => {
-    if (!interactContractHash || !keyName) {
-      alert('Key Name and Contract Hash are required for state query');
-      return;
-    }
-
-    // Helper to convert JS values to Clarity Values
-    const toCV = (val: any): ClarityValue => {
-      if (typeof val === 'number') return uintCV(val);
-      if (typeof val === 'boolean') return val ? trueCV() : falseCV();
-      if (val === null) return noneCV();
-      if (typeof val === 'string') {
-        if ((val.startsWith('SP') || val.startsWith('ST')) && (val.includes('.') || val.length >= 39)) {
-          return principalCV(val);
-        }
-        return stringUtf8CV(val);
-      }
-      if (Array.isArray(val)) return listCV(val.map(toCV));
-      if (typeof val === 'object') {
-        const tupleData: any = {};
-        for (const [k, v] of Object.entries(val)) {
-          tupleData[k] = toCV(v);
-        }
-        return tupleCV(tupleData);
-      }
-      return stringUtf8CV(String(val));
-    };
 
     try {
-      const [contractAddress, contractName] = interactContractHash.split('.');
-      const apiUrl = network === 'mainnet'
-        ? 'https://api.mainnet.hiro.so'
-        : 'https://api.testnet.hiro.so';
+      let code = selectedFile.content || '';
+      const result = await runExclusively(async (simnet) => {
+        const clarityVersion = settings?.clarityVersion ? parseInt(settings.clarityVersion) : 2;
+        // @ts-ignore - Signature is (name, code, requirements, sender, clarityVersion)
+        return simnet.deployContract(name, code, [], simnetDeployer, clarityVersion);
+      });
 
-      let cvArgs: string[] = [];
-      try {
-        let rawCvArgs: ClarityValue[] = [];
-        
-        if (showJsonInput) {
-          const parsed = JSON.parse(argumentsJson);
-          const argsArray = Array.isArray(parsed) ? parsed : [parsed];
-          rawCvArgs = argsArray.map(toCV);
-        } else {
-          // Use auto-generated arguments from entryPoint/keyName
-          // First try to find the definition in ABI
-          const func = contractInterface?.functions.find((f: any) => f.name === keyName) || 
-                       contractInterface?.functions.find((f: any) => f.name === entryPoint);
-          
-          if (func && func.args) {
-            rawCvArgs = func.args.map((argDef: any) => {
-              const rawValue = functionArgs[argDef.name] || '';
-              const typeStr = formatClarityType(argDef.type);
-              if (typeStr === 'uint128') return uintCV(rawValue || 0);
-              if (typeStr === 'int128') return intCV(rawValue || 0);
-              if (typeStr === 'bool') return rawValue.toLowerCase() === 'true' ? trueCV() : falseCV();
-              if (typeStr.includes('principal')) {
-                return principalCV(rawValue);
-              }
-              if (typeStr.startsWith('string-ascii')) return stringAsciiCV(rawValue);
-              if (typeStr.startsWith('string-utf8')) return stringUtf8CV(rawValue);
-              return stringUtf8CV(rawValue);
-            });
-          }
-        }
-
-        cvArgs = rawCvArgs.map(cv => {
-          const bytes = serializeCV(cv);
-          return '0x' + (typeof bytes === 'string' ? bytes : bytesToHex(bytes as Uint8Array));
-        });
-      } catch (e) {
-        console.warn('Query arguments parsing failed', e);
-      }
+      console.log('[Simnet] Deployment result:', result);
 
       if (onAddTerminalLine) {
         onAddTerminalLine({
-          type: 'info',
-          content: `Debug: Querying State [${keyName}] from ${contractAddress}.${contractName} on ${network}`
+          type: 'success',
+          content: `Contract ${name} deployed locally to Simnet!`
         });
       }
 
-      console.log(`Querying ${keyName}...`);
+      const newContract: DeployedContract = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: name,
+        contractHash: `${simnetDeployer}.${name}`,
+        deployHash: `local-${Date.now()}`,
+        network: 'simnet',
+        timestamp: Date.now(),
+        originalFileId: selectedFileId,
+        entryPoints: compilationResult?.metadata?.entryPoints || []
+      };
 
-      const response = await fetch(`${apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/${keyName}`, {
+      if (onDeploySuccess) {
+        onDeploySuccess(newContract);
+
+      }
+
+      fetch('/ide-api/stats/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: wallet.address || contractAddress,
-          arguments: cvArgs
-        })
-      });
+          eventType: 'DEPLOYMENT',
+          wallet: wallet.address || 'unconnected',
+          payload: {
+            contractName: contractName,
+            network: network,
+            status: 'success',
+            metadata: {
+              //  deployHash: response.txid,
 
-      const result = await response.json();
-
-      if (result.okay) {
-        console.log('Query result (raw):', result.result);
-        try {
-          // Decode the Hex mapping to human-readable Clarity Value
-          const hex = result.result.startsWith('0x') ? result.result.slice(2) : result.result;
-          const decodedCV = deserializeCV(hexToBytes(hex));
-          const humanReadable = cvToValue(decodedCV);
-
-          // Format based on type
-          const formatted = typeof humanReadable === 'object'
-            ? JSON.stringify(humanReadable, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
-            : String(humanReadable);
-
-          console.log('Decoded Result:', humanReadable);
-
-          // Add to terminal logs
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'query',
-              content: `${keyName} call returned value`,
-              data: {
-                contract: `${contractAddress}.${contractName}`,
-                function: keyName,
-                args: argumentsJson.trim() || '[]',
-                result: formatted
-              }
-            });
+            }
           }
+        })
+      }).catch(err => console.error('Telemetry failed:', err));
 
-          // Telemetry Ingest for Query
-          fetch('/ide-api/stats/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  eventType: 'QUERY',
-                  wallet: wallet.address || 'unconnected',
-                  payload: {
-                      contractName: interactContractHash,
-                      functionName: keyName,
-                      network: network,
-                      status: 'success'
-                  }
-              })
-          }).catch(err => console.error('Telemetry failed:', err));
+      // Re-fetch balances to show gas deduction
+      await fetchSimnetInfo();
 
-          // alert(`Query Result:\n${formatted}`);
-        } catch (decodeErr) {
-          console.warn('Failed to decode result hex, showing raw:', decodeErr);
-          //  alert(`Query Result (Raw): ${result.result}`);
-        }
-      } else {
-        console.error('Query failed:', result.cause);
-        //  alert(`Query Failed: ${result.cause || 'Unknown Error'}. Ensure the contract is confirmed on-chain.`);
-
-        if (onAddTerminalLine) {
-          onAddTerminalLine({
-            type: 'error',
-            content: `Query failed for ${keyName}: ${result.cause || 'Unknown Error'}`
-          });
-        }
-      }
     } catch (err: any) {
-      alert(`Query Error: ${err.message}`);
-    }
-  };
+      console.error('[Simnet] Deployment failed:', err);
 
-  const fetchStateValue = async (targetKey: string, isMap: boolean = false) => {
-    if (!interactContractHash || !targetKey) return;
 
-    setLoadingQuery(true);
-    setQueryValue(null);
+      // Check if it's a cancellation or a real error
+      const isCancel = err?.message?.includes('cancel') || err === 'cancel' || err?.code === 'user_rejection';
 
-    try {
-      const [targetAddress, targetContractName] = interactContractHash.split('.');
-      const apiUrl = network === 'mainnet' ? 'https://api.mainnet.hiro.so' : 'https://api.testnet.hiro.so';
-
-      if (isMap) {
-        if (onAddTerminalLine) onAddTerminalLine({ type: 'info', content: `To query map ${targetKey}, please use the Entry Point area with the map-get logic.` });
-      } else {
-        const response = await fetch(`${apiUrl}/v2/contracts/call-read/${targetAddress}/${targetContractName}/${targetKey}`, {
+      // Telemetry Ingest for failure (if not cancelled)
+      if (!isCancel) {
+        fetch('/ide-api/stats/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sender: wallet.address || targetAddress,
-            arguments: []
+            eventType: 'DEPLOYMENT',
+            wallet: wallet.address || 'unconnected',
+            payload: {
+              contractName: contractName,
+              network: network,
+              status: 'failure',
+              metadata: {
+                error: err.message || 'Unknown error'
+              }
+            }
           })
-        });
-
-        const result = await response.json();
-        if (result.okay) {
-          const hex = result.result.startsWith('0x') ? result.result.slice(2) : result.result;
-          const decodedCV = deserializeCV(hexToBytes(hex));
-          const humanReadable = cvToValue(decodedCV);
-
-          const formatted = typeof humanReadable === 'object'
-            ? JSON.stringify(humanReadable, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
-            : String(humanReadable);
-
-          setQueryValue(formatted);
-          if (onAddTerminalLine) {
-            onAddTerminalLine({
-              type: 'query',
-              content: `State fetched: ${targetKey}`,
-              data: { result: formatted }
-            });
-          }
-        } else {
-          setQueryValue(`Error: ${result.cause || 'Unknown'}`);
-        }
+        }).catch(err => console.error('Telemetry failed:', err));
       }
-    } catch (err: any) {
-      setQueryValue(`Error: ${err.message}`);
+
+      if (onAddTerminalLine) {
+        // Capture full error details for Simnet (including Clarity backtrace if available in stack)
+        const detailedError = err instanceof Error ? (err.stack || err.message) : (typeof err === 'object' ? JSON.stringify(err, null, 2) : String(err));
+        onAddTerminalLine({
+          type: 'error',
+          content: `Simnet Deployment failed: ${detailedError}`
+        });
+      }
     } finally {
-      setLoadingQuery(false);
+      setDeploying(false);
     }
   };
+
+  const handleSimnetCall = async (targetAddress: string, targetContractName: string, methodName: string, args: ClarityValue[]) => {
+    try {
+      if (onAddTerminalLine) {
+        onAddTerminalLine({
+          type: 'command',
+          content: `Simulating contract call on Simnet: ${targetAddress}.${targetContractName}::${methodName}...`
+        });
+      }
+
+      const result = await runExclusively(async (simnet) => {
+        const contractId = `${targetAddress}.${targetContractName}`;
+        console.log(`[Simnet] Calling public fn ${methodName} on ${contractId}...`);
+        return simnet.callPublicFn(contractId, methodName, args, activeSimnetAccount);
+      });
+
+      console.log('[Simnet] Call result:', result);
+
+      if (onAddTerminalLine) {
+        const readableResult = formatCVValue(cvToValue(result.result));
+        onAddTerminalLine({
+          type: 'result',
+          content: `Simnet call returned: ${readableResult}`,
+          data: { result: readableResult }
+        });
+      }
+
+      if (onInteracted) {
+        onInteracted(`${targetAddress}.${targetContractName}`, methodName, 'simnet', { result });
+      }
+
+      // Re-fetch balances to show gas deduction
+      await fetchSimnetInfo();
+    } catch (err: any) {
+      console.error('[Simnet] Call failed:', err);
+      if (onAddTerminalLine) {
+        // Capture full error details for Simnet (including Clarity backtrace if available in stack)
+        const detailedError = err instanceof Error ? (err.stack || err.message) : (typeof err === 'object' ? JSON.stringify(err, null, 2) : String(err));
+        onAddTerminalLine({
+          type: 'error',
+          content: `Simnet Call failed: ${detailedError}`
+        });
+      }
+    }
+  };
+
+
 
   return (
     <div className="flex flex-col h-full">
@@ -896,28 +756,111 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Wallet Section */}
         <section>
-          <div className="flex justify-between items-center mb-2">
-            <div className="flex items-center gap-2">
-              <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">BALANCE:</h3>
+          {wallet.connected && <div className="flex justify-between items-center mb-2">
 
+            <div className="flex items-center gap-2">
+              <h3 className="text-[10px] font-bold text-caspier-muted uppercase tracking-tight">
+                {isSimnet && wallet.connected ? '' : 'BALANCE:'}
+              </h3>
             </div>
-            {wallet.connected && (
+            {(wallet.connected || !isSimnet) && (
               <span className="text-[10px] font-mono font-bold text-labstx-orange bg-labstx-orange/10 px-1.5 py-0.5 rounded">
                 {balance} STX
               </span>
             )}
           </div>
-          {!wallet.addresses && wallet.connected && (
-            <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] text-blue-400">
-              💡 Please <strong>Reconnect Wallet</strong> to enable seamless Mainnet/Testnet switching.
+          }
+          <div className="space-y-4">
+            {isSimnet && (
+              <div className="hidden space-y-2">
+                <div className="relative group">
+                  <select
+                    value={activeSimnetAccount}
+                    onChange={(e) => onSimnetAccountChange?.(e.target.value)}
+                    className="w-full bg-caspier-dark border border-caspier-border text-caspier-text px-3 py-2.5 text-[11px] font-mono focus:border-labstx-orange outline-none rounded-sm transition-all appearance-none cursor-pointer"
+                  >
+                    {simnetAccounts.length > 0 ? (
+                      simnetAccounts.map((addr, idx) => (
+                        <option key={addr} value={addr}>
+                          {idx === 0 ? 'Deployer' : `Account ${idx}`} ({simnetBalances[addr] || '...'} STX) - {addr.slice(0, 10)}...
+                        </option>
+                      ))
+                    ) : (
+                      <option value={activeSimnetAccount}>
+                        Default Account - {activeSimnetAccount.slice(0, 10)}...
+                      </option>
+                    )}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity">
+                    <ChevronDownIcon className="w-3 h-3 text-caspier-muted" />
+                  </div>
+                </div>
+                <p className="text-[8px] text-caspier-muted italic leading-tight px-1">
+                  Simnet uses pre-funded virtual accounts. Switching here changes the sender for deployments and calls.
+                </p>
+              </div>
+            )}
+
+            <div className={isSimnet ? "pt-2 border-t border-caspier-border/30" : ""}>
+
+              {!wallet.addresses && wallet.connected && !isSimnet && (
+                <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] text-blue-400">
+                  💡 Please <strong>Reconnect Wallet</strong> to enable seamless Mainnet/Testnet switching.
+                </div>
+              )}
+              {!isSimnet && (
+                <WalletConnectionComponent
+                  wallet={wallet}
+                  onConnect={onWalletConnect}
+                  onDisconnect={onWalletDisconnect}
+                  network={network as any}
+                />
+              )}
+              {isSimnet && (
+                <div className="group relative overflow-hidden border-caspier-border border border-white/10 bg-gradient-to-br from-indigo-500/10 via-transparent to-purple-500/10 p-4 transition-all hover:border-indigo-500/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/20">
+                        <CheckIcon className="h-3.5 w-3.5 text-indigo-400" />
+                      </div>
+                      <span className="text-xs font-semibold tracking-wider uppercase text-indigo-400">
+                        Connected SIMNET
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => { }}
+                      className="rounded-lg p-1 text-caspier-muted hover:bg-red-500/10 hover:text-red-400 transition-all"
+                      title="Disconnect"
+                    >
+                      <XIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase tracking-widest text-caspier-muted font-medium">Active Address</p>
+                        <div className="flex items-center gap-2">
+                          <code className="text-sm font-mono text-caspier-text">
+
+                            ST1PQH...GZGM
+                          </code>
+
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-widest text-caspier-muted font-medium">Network</p>
+                        <span className="text-xs font-bold text-caspier-text uppercase">
+                          SIMNET                            </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              )}
             </div>
-          )}
-          <WalletConnectionComponent
-            wallet={wallet}
-            onConnect={onWalletConnect}
-            onDisconnect={onWalletDisconnect}
-            network={network as any}
-          />
+          </div>
         </section>
 
         {/* Contract Selection */}
@@ -959,15 +902,15 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         {/* Network Selection */}
         <section>
           <h3 className="text-[10px] font-bold text-caspier-muted mb-2 uppercase tracking-tight">Network</h3>
-          <div className="grid grid-cols-2 gap-1">
-            {(['mainnet', 'testnet'] as const).map((net) => (
+          <div className="grid grid-cols-3 gap-1">
+            {(['mainnet', 'testnet', 'simnet'] as const).map((net) => (
               <button
                 key={net}
-                onClick={() => !wallet.connected && setNetwork(net)}
-                disabled={wallet.connected && network !== net}
+                onClick={() => (net === 'simnet' || !wallet.connected) && setNetwork(net)}
+                disabled={!isSimnet && wallet.connected && network !== net}
                 className={`px-1 py-1.5 text-[10px] font-bold uppercase border rounded-sm transition-all ${network === net
                   ? 'bg-labstx-orange border-labstx-orange text-white'
-                  : wallet.connected
+                  : !isSimnet && wallet.connected
                     ? 'bg-caspier-dark border-caspier-border text-caspier-muted cursor-not-allowed opacity-50 grayscale'
                     : 'bg-caspier-dark border-caspier-border text-caspier-muted hover:border-labstx-orange'
                   }`}
@@ -979,7 +922,7 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
         </section>
 
         {/* Advanced Options */}
-        <section className="bg-caspier-black/40 border border-caspier-border rounded p-2 overflow-hidden">
+        <section className="bg-caspier-black/40 border border-caspier-border rounded p-2 overflow-hidden hidden">
           <button
             onClick={() => setShowAdvanced(!showAdvanced)}
             className="w-full flex justify-between items-center text-[10px] font-bold text-caspier-muted uppercase tracking-tight"
@@ -1060,15 +1003,17 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
             <div className="p-2 bg-labstx-orange/10 border border-caspier-border rounded text-[10px] text-labstx-orange flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
                 <CheckIcon className="w-3 h-3 flex-shrink-0" />
-                <span>Already deployed on-chain</span>
+                <span>Already deployed {isSimnet ? 'locally' : 'on-chain'}</span>
               </div>
               <button
                 onClick={() => {
                   const selectedFile = clarityFiles.find(f => f.id === selectedFileId);
-                  if (selectedFile && wallet.address) {
+                  if (selectedFile && (wallet.address || isSimnet)) {
                     const contractName = selectedFile.name.replace('.clar', '');
-                    setInteractContractHash(`${wallet.address}.${contractName}`);
-                    document.getElementById('interaction-section')?.scrollIntoView({ behavior: 'smooth' });
+                    const principal = isSimnet ? simnetDeployer : wallet.address;
+                    if (onGoToInteract) {
+                      onGoToInteract(`${principal}.${contractName}`);
+                    }
                   }
                 }}
                 className="text-[9px] font-bold underline hover:no-underline"
@@ -1077,287 +1022,47 @@ const DeployPanel: React.FC<DeployPanelProps> = ({
               </button>
             </div>
           )}
-          <Button
-            onClick={handleDeploy}
-            disabled={deploying || !wallet.connected || clarityFiles.length === 0 || checkingDeployment || isAlreadyDeployed}
-            className={`w-full h-11 font-bold uppercase tracking-widest text-xs transition-all ${wallet.connected ? 'shadow-[4px_4px_0_0_rgba(255,107,0,0.3)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_rgba(255,107,0,0.4)]' : ''
-              } ${isAlreadyDeployed ? 'opacity-80' : ''}`}
-            variant="primary"
-          >
-            {checkingDeployment ? 'Checking...' : deploying ? 'Broadcasting...' : isAlreadyDeployed ? 'Contract is deployed' : 'Deploy'}
-          </Button>
-        </div>
-
-        {/* Interact with Contract */}
-        <section id="interaction-section" className="pt-6 border-t border-caspier-border space-y-5">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-labstx-orange animate-pulse" />
-            <h3 className="text-[10px] font-bold text-caspier-text uppercase tracking-widest">Interact with Contract</h3>
-          </div>
-
-          <div>
-            <label className="text-[9px] font-bold text-caspier-muted mb-2 block uppercase tracking-tight">Contract Hash</label>
-            <div className="space-y-2">
-              <select
-                value={interactContractHash}
-                onChange={(e) => setInteractContractHash(e.target.value)}
-                className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm transition-colors"
-              >
-                <option value="">Select deployed contract...</option>
-                {deployedContracts.map(c => (
-                  <option key={c.id} value={c.contractHash}>{c.name} ({c.contractHash.substring(0, 6)}...)</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                placeholder="Or paste contract hash here..."
-                value={interactContractHash}
-                onChange={(e) => setInteractContractHash(e.target.value)}
-                className="w-full bg-caspier-dark border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm transition-colors"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            {contractInterface && (
-              <div className="bg-caspier-dark/50 border border-caspier-border rounded p-3 space-y-3">
-                <div className="flex items-center justify-between border-b border-caspier-border pb-2">
-                  <h4 className="text-[10px] font-black text-labstx-orange uppercase tracking-widest">Available Functions</h4>
-                  <span className="text-[8px] text-caspier-muted px-1.5 py-0.5 bg-caspier-black rounded border border-caspier-border uppercase">Found on-chain</span>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Public Functions (State Changing) */}
-                  {contractInterface.functions.filter((f: any) => f.access === 'public').length > 0 && (
-                    <div>
-                      <p className="text-[9px] font-bold text-caspier-muted mb-2 uppercase opacity-60">Write Operations</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {contractInterface.functions
-                          .filter((f: any) => f.access === 'public')
-                          .map((f: any) => (
-                            <button
-                              key={f.name}
-                              onClick={() => setEntryPoint(f.name)}
-                              className={`px-2 py-1 text-[10px] font-mono border rounded transition-all ${entryPoint === f.name
-                                ? 'bg-labstx-orange text-white border-labstx-orange'
-                                : 'bg-caspier-black text-caspier-text border-caspier-border hover:border-labstx-orange'
-                                }`}
-                            >
-                              {f.name}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Read-Only Functions */}
-                  {contractInterface.functions.filter((f: any) => f.access === 'read_only').length > 0 && (
-                    <div>
-                      <p className="text-[9px] font-bold text-caspier-muted mb-2 uppercase opacity-60">Read Operations</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {contractInterface.functions
-                          .filter((f: any) => f.access === 'read_only')
-                          .map((f: any) => (
-                            <button
-                              key={f.name}
-                              onClick={() => {
-                                setEntryPoint(f.name);
-                                setKeyName(f.name); // Also set for state query
-                              }}
-                              className={`px-2 py-1 text-[10px] font-mono border rounded transition-all ${(entryPoint === f.name || keyName === f.name)
-                                ? 'bg-green-600 text-white border-green-500'
-                                : 'bg-caspier-black text-caspier-text border-caspier-border hover:border-green-500'
-                                }`}
-                            >
-                              {f.name}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="text-[9px] font-bold text-caspier-muted mb-1 block uppercase tracking-tight">Entry Point</label>
-              <input
-                type="text"
-                placeholder="e.g., increment, get_count"
-                value={entryPoint}
-                onChange={(e) => setEntryPoint(e.target.value)}
-                className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-[9px] font-bold text-caspier-muted block uppercase tracking-tight">
-                  {showJsonInput ? 'Arguments (JSON)' : 'Function Arguments'}
-                </label>
-                <button
-                  onClick={() => setShowJsonInput(!showJsonInput)}
-                  className="text-[9px] font-bold text-labstx-orange hover:underline uppercase tracking-tighter"
-                >
-                  {showJsonInput ? 'Use Auto-Fields' : 'Use Raw JSON'}
-                </button>
-              </div>
-
-              {showJsonInput ? (
-                <textarea
-                  placeholder="{}"
-                  value={argumentsJson}
-                  onChange={(e) => setArgumentsJson(e.target.value)}
-                  className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono h-24 resize-none"
-                />
-              ) : (
-                <div className="space-y-3">
-                  {(() => {
-                    const func = contractInterface?.functions.find((f: any) => f.name === entryPoint);
-                    if (func && func.args && func.args.length > 0) {
-                      return func.args.map((arg: any) => (
-                        <div key={arg.name}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-mono text-caspier-text">{arg.name}</span>
-                            <span className="text-[8px] font-mono text-caspier-muted italic bg-caspier-black px-1 rounded border border-caspier-border">{formatClarityType(arg.type)}</span>
-                          </div>
-                          <input
-                            type="text"
-                            placeholder={formatClarityType(arg.type) === 'uint128' ? 'e.g. 1000' : formatClarityType(arg.type) === 'bool' ? 'true / false' : `Enter ${arg.name}...`}
-                            value={functionArgs[arg.name] || ''}
-                            onChange={(e) => setFunctionArgs({ ...functionArgs, [arg.name]: e.target.value })}
-                            className="w-full bg-caspier-dark border border-caspier-border text-caspier-text px-2 py-1.5 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono"
-                          />
-                        </div>
-                      ));
-                    } else if (entryPoint) {
-                      return (
-                        <div className="p-3 bg-caspier-black/30 border border-caspier-border rounded border-dashed text-center">
-                          <p className="text-[10px] text-caspier-muted italic">No arguments needed for this function</p>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div className="p-3 bg-caspier-black/30 border border-caspier-border rounded border-dashed text-center">
-                          <p className="text-[10px] text-caspier-muted italic">Select a function to see its arguments</p>
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Button
-                onClick={handleCallContract}
-                className="w-full text-[10px] font-black uppercase tracking-widest py-2.5 bg-labstx-orange text-white border-labstx-orange hover:shadow-neobrutal-sm active:shadow-none translate-x-[-1px] translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px]"
-                variant="primary"
-              >
-                Call Contract
-              </Button>
-              <p className="text-[9px] text-caspier-muted text-center italic">Results will appear in the terminal below</p>
-            </div>
-          </div>
-
-          <div className="bg-caspier-black/30 border border-caspier-border rounded-lg p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-[10px] font-black text-caspier-muted uppercase tracking-tighter">Query State (Free Read)</h4>
-              <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
-            </div>
-
-            <div>
-              <label className="text-[9px] font-bold text-caspier-muted mb-1 block uppercase tracking-tight">Key / Var Name</label>
-              <input
-                type="text"
-                placeholder="count"
-                value={keyName}
-                onChange={(e) => setKeyName(e.target.value)}
-                className="w-full bg-caspier-black border border-caspier-border text-caspier-text px-2 py-2 text-[11px] focus:border-labstx-orange outline-none rounded-sm font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="grid grid-cols-1 gap-2">
-                <Button
-                  onClick={handleQueryState}
-                  className="w-full text-[10px] font-black uppercase tracking-widest py-2 bg-caspier-dark border-caspier-border text-caspier-text hover:border-labstx-orange transition-all"
-                  variant="secondary"
-                >
-                  Query State
-                </Button>
-              </div>
-
-              {queryValue && (
-                <div className="p-2 bg-caspier-black border border-caspier-border rounded animate-in fade-in zoom-in duration-200">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[8px] text-caspier-muted uppercase font-bold tracking-tighter">Result</span>
-                    <button onClick={() => setQueryValue(null)} className="text-[8px] text-caspier-muted hover:text-white">CLEAR</button>
-                  </div>
-                  <pre className="text-[10px] font-mono text-green-400 break-all whitespace-pre-wrap max-h-32 overflow-y-auto">
-                    {queryValue}
-                  </pre>
-                </div>
-              )}
-
-              <p className="text-[8px] text-caspier-muted text-center leading-tight">No gas required - reads state directly from chain</p>
-            </div>
-          </div>
-
-          {/* Quick Explorer (Maps & Variables) */}
-          {contractInterface && (contractInterface.variables.length > 0 || contractInterface.maps.length > 0) && (
-            <div className="bg-caspier-black/30 border border-caspier-border rounded-lg p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[10px] font-black text-caspier-muted uppercase tracking-tighter">Storage Explorer</h4>
-                <div className="w-1.5 h-1.5 rounded-full bg-labstx-orange" />
-              </div>
-
-              <div className="space-y-4 max-h-64 overflow-y-auto pr-1 thin-scrollbar">
-                {contractInterface.variables.length > 0 && (
-                  <div>
-                    <p className="text-[8px] font-black text-caspier-muted mb-1.5 uppercase opacity-60">Constants & Variables</p>
-                    <div className="flex flex-wrap gap-1">
-                      {contractInterface.variables.map((v: any) => (
-                        <button
-                          key={v.name}
-                          onClick={() => {
-                            setKeyName(v.name);
-                            fetchStateValue(v.name);
-                          }}
-                          className="px-2 py-0.5 text-[9px] font-mono bg-caspier-dark border border-caspier-border rounded hover:border-labstx-orange transition-colors"
-                        >
-                          {v.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {contractInterface.maps.length > 0 && (
-                  <div>
-                    <p className="text-[8px] font-black text-caspier-muted mb-1.5 uppercase opacity-60">Maps (Requires Key)</p>
-                    <div className="flex flex-wrap gap-1">
-                      {contractInterface.maps.map((m: any) => (
-                        <button
-                          key={m.name}
-                          onClick={() => {
-                            setKeyName(m.name);
-                            if (onAddTerminalLine) onAddTerminalLine({ type: 'info', content: `Query map ${m.name} using the arguments field below.` });
-                          }}
-                          className="px-2 py-0.5 text-[9px] font-mono bg-caspier-dark border border-caspier-border rounded hover:border-labstx-orange transition-colors"
-                        >
-                          {m.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+          {isSimnet && !compilationResult && (
+            <div className="p-2 mb-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] text-yellow-500 flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Ensure you compile your contract to be able to deploy contract to <strong className='uppercase'>simnet</strong></span>
             </div>
           )}
-        </section>
+          <Button
+            type="button"
+            onClick={handleDeploy}
+            disabled={deploying || (!isSimnet && !wallet.connected) || clarityFiles.length === 0 || checkingDeployment || (!isSimnet && isAlreadyDeployed) || (isSimnet && !compilationResult)}
+            className={`w-full h-11 font-bold uppercase tracking-widest text-xs transition-all ${(isSimnet || wallet.connected) ? 'shadow-[4px_4px_0_0_rgba(255,107,0,0.3)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0_0_rgba(255,107,0,0.4)]' : ''
+              } ${(!isSimnet && isAlreadyDeployed) ? 'opacity-80' : ''}`}
+            variant="primary"
+          >
+            {checkingDeployment ? 'Checking...' : deploying ? 'Broadcasting...' : (!isSimnet && isAlreadyDeployed) ? 'Contract is deployed' : (isSimnet && isAlreadyDeployed) ? 'Redeploy' : 'Deploy'}
+          </Button>
+        </div>
       </div>
+      {xverseWarningHandler && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className={`w-full max-w-sm border rounded-lg shadow-lg p-6 ${theme === 'dark' ? 'bg-[#1e1e1e] border-caspier-border' : 'bg-white border-gray-200'}`}>
+            <h3 className={`text-lg font-semibold mb-3 flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              <span className="text-labstx-orange">⚠</span> Warning
+            </h3>
+            <p className={`text-sm  ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+              <strong>Xverse</strong>  is not Stable for Contract deployment yet , it contains a bug in the extension for contract deployment. Please use Leather wallet.
+            </p>
+            <div className="invisible text-xs text-gray-500 my-3"> View the error here : <a href="https://github.com/secretkeylabs/xverse-web-extension/issues" target='_blank' className=' text-blue-500 hover:text-blue-600 hover:underline'>Xverse Wallet Deployment Issue</a></div>
+            <div className="flex justify-end gap-3">
+              <Button onClick={() => xverseWarningHandler.resolve(false)} variant="secondary" className="px-4 py-2 text-xs">
+                Cancel
+              </Button>
+              <Button onClick={() => xverseWarningHandler.resolve(true)} variant="primary" className="px-4 py-2 text-xs">
+                Continue anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+
   );
 };
 

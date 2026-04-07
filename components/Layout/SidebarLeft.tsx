@@ -9,12 +9,20 @@ import {
     GlobeIcon,
     HashIcon,
     ActivityIcon,
-    TerminalIcon
+    TerminalIcon,
+    DatabaseIcon,
+    CheckCircleIcon,
+    BookOpenIcon,
+    FunctionIcon,
+    QueryIcon
 } from '../UI/Icons';
 import { Button } from '../UI/Button';
 import DeployPanel from '../Deploy/DeployPanel';
+import ContractPanel from '../ContractPanel/ContractPanel';
 //import { TEMPLATES, templateToFileNodes } from '../../services/templates';
 import { DiscoveryImportModal, DiscoveryImportType, StacksNetworkType } from './DiscoveryImportModal';
+import { ArrowUpDown, CircleQuestionMarkIcon, CloudDownloadIcon, InfoIcon } from 'lucide-react';
+import DeployPanell from '@/xxxx/test';
 
 interface SidebarLeftProps {
     files: FileNode[];
@@ -57,6 +65,15 @@ interface SidebarLeftProps {
     deployedContracts: DeployedContract[];
     setDeployedContracts: React.Dispatch<React.SetStateAction<DeployedContract[]>>;
     onContractClick?: (contract: DeployedContract) => void;
+    onOpenSimnetScratchpad?: () => void;
+    activeSimnetAccount?: string;
+    onSimnetAccountChange?: (address: string) => void;
+    onGoToInteract?: (hash: string) => void;
+    onOpenContractCall?: (hash: string) => void;
+    prefilledContractInfo?: { address: string; name: string } | null;
+    setPrefilledContractInfo?: React.Dispatch<React.SetStateAction<{ address: string; name: string } | null>>;
+    hasClarinet?: boolean;
+    onStartTour?: (tourId: string) => void;
 }
 
 interface ContextMenuProps {
@@ -523,9 +540,9 @@ const DropdownItem: React.FC<{
 }> = ({ icon, label, sublabel, onClick }) => (
     <button
         onClick={onClick}
-        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-caspier-hover rounded-lg transition-colors group text-left"
+        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-caspier-hover  transition-colors group text-left"
     >
-        <div className="w-8 h-8 rounded-lg bg-caspier-black border border-caspier-border flex items-center justify-center group-hover:border-labstx-orange transition-colors">
+        <div className="w-8 h-8  bg-caspier-black border border-caspier-border flex items-center justify-center group-hover:border-labstx-orange transition-colors">
             {icon}
         </div>
         <div className="flex-1 min-w-0">
@@ -543,7 +560,11 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     wallet, onWalletConnect, onWalletDisconnect, compilationResult, onDeploySuccess,
     onLoadTemplate, onCreateBlank, onImport, theme, onAddTerminalLine,
     onOpenNewProject, onDiscoveryImport, sessionId, onUpdateFiles, onCollapseAll, discoveryProgress,
-    onMoveNode, onExternalDrop, deployedContracts, setDeployedContracts, onContractClick, onInteracted
+    onMoveNode, onExternalDrop, deployedContracts, setDeployedContracts, onContractClick, onInteracted,
+    onOpenSimnetScratchpad, activeSimnetAccount, onSimnetAccountChange,
+    onGoToInteract, onOpenContractCall, prefilledContractInfo, setPrefilledContractInfo,
+    hasClarinet,
+    onStartTour
 }) => {
     // Explorer State
     const [isExplorerDragOver, setIsExplorerDragOver] = useState(false);
@@ -558,7 +579,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     // Search State
     const [searchQuery, setSearchQuery] = useState('');
     const [replaceQuery, setReplaceQuery] = useState('');
-    const [isReplaceVisible, setIsReplaceVisible] = useState(false);
+    const [isReplaceVisible, setIsReplaceVisible] = useState(true);
     const [searchOptions, setSearchOptions] = useState({
         matchCase: false,
         matchWholeWord: false,
@@ -566,11 +587,12 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     });
 
     const [contractSearchQuery, setContractSearchQuery] = useState('');
-    const [contractNetworkFilter, setContractNetworkFilter] = useState<'all' | 'mainnet' | 'testnet' | 'mocknet'>('all');
+    const [contractNetworkFilter, setContractNetworkFilter] = useState<'all' | 'mainnet' | 'testnet' | 'mocknet' | 'simnet'>('all');
     const [contractDateFilter, setContractDateFilter] = useState<'all' | 'today' | 'week'>('all');
     const [contractSortOrder, setContractSortOrder] = useState<'newest' | 'oldest'>('newest');
     const [showActivityFilters, setShowActivityFilters] = useState(false);
     const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+    const [testDirectory, setTestDirectory] = useState('tests');
 
     // Git State
     const [commitMessage, setCommitMessage] = useState('');
@@ -578,7 +600,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
     const [isVersionsOpen, setIsVersionsOpen] = useState(true);
     const [systemVersions, setSystemVersions] = useState({
-        clarity: '4',
+        clarity: '5',
         node: 'v22.22.0',
         npm: 'v10.9.0',
         clarinet: 'v3.15.0',
@@ -793,13 +815,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
     // --- Render Views ---
 
-    const handleLoadTemplate = (templateId: string) => {
-        const template = TEMPLATES.find(t => t.id === templateId);
-        if (!template || !onLoadTemplate) return;
 
-        const nodes = templateToFileNodes(template);
-        onLoadTemplate(nodes, template.name);
-    };
 
     const renderExplorer = () => (
         <div
@@ -963,6 +979,18 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     </div>
                 )}
 
+                {!hasClarinet && (
+                    <div className="mx-3 my-2 p-3 bg-amber-500/10 border border-amber-500/20  flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                        <div className="flex items-center gap-2 text-amber-500">
+                            <CircleQuestionMarkIcon className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Notice</span>
+                        </div>
+                        <p className="text-[11px] text-caspier-muted leading-relaxed">
+                            This is not a <span className="text-caspier-text font-bold">Clarity project</span>.
+                        </p>
+                    </div>
+                )}
+
                 {files.map(node => (
                     <FileTreeItem
                         key={node.id}
@@ -1004,7 +1032,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         {/* Clarinet / Clarity SDK */}
                         <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-labstx-orange/30 hover:bg-labstx-orange/[0.03] transition-all cursor-default relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-16 h-16 bg-labstx-orange/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-labstx-orange/10 transition-colors" />
-                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black rounded-lg border-2 border-caspier-border shadow-inner group-hover:border-labstx-orange/20 transition-colors relative z-10">
+                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black  border-2 border-caspier-border shadow-inner group-hover:border-labstx-orange/20 transition-colors relative z-10">
                                 <SmartFileIcon name="contract.clar" className="w-5 h-5" />
                             </div>
                             <div className="flex flex-col min-w-0 relative z-10">
@@ -1029,7 +1057,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         {/* Node.js / NPM Terminal */}
                         <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-green-500/30 hover:bg-green-500/[0.03] transition-all cursor-default relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-green-500/10 transition-colors" />
-                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black rounded-lg  shadow-inner group-hover:border-green-500/20 transition-colors relative z-10">
+                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black shadow-inner group-hover:border-green-500/20 transition-colors relative z-10">
 
                                 {theme === 'dark' ? (
                                     <img
@@ -1231,7 +1259,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                    <div className="flex flex-col gap-2.5 p-1 bg-caspier-black/30 rounded-lg border border-caspier-border">
+                    <div className="flex flex-col gap-2.5 p-1 bg-caspier-black/30  border border-caspier-border">
                         <textarea
                             className="w-full bg-caspier-black/50 border border-caspier-border text-caspier-text p-2.5 text-[11px] font-medium focus:border-caspier-border focus:ring-1 focus:ring-labstx-orange/20 outline-none resize-none h-20 rounded-md placeholder:text-caspier-muted transition-all"
                             placeholder="Commit message..."
@@ -1257,7 +1285,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                             <div className="h-[1px] flex-1 bg-caspier-border ml-3" />
                         </div>
                         {gitState.stagedFiles.length === 0 ? (
-                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border rounded-lg">No staged changes</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border ">No staged changes</div>
                         ) : (
                             <div className="space-y-0.5">
                                 {gitState.stagedFiles.map(id => (
@@ -1286,7 +1314,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                             <div className="h-[1px] flex-1 bg-caspier-border ml-3" />
                         </div>
                         {gitState.modifiedFiles.length === 0 ? (
-                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border rounded-lg">All changes committed</div>
+                            <div className="text-[11px] text-caspier-muted italic px-2 py-4 text-center border border-dashed border-caspier-border ">All changes committed</div>
                         ) : (
                             <div className="space-y-0.5">
                                 {gitState.modifiedFiles.map(id => (
@@ -1428,11 +1456,26 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     onFileSelect={onFileSelect}
                     deployedContracts={deployedContracts}
                     setDeployedContracts={setDeployedContracts}
+                    activeSimnetAccount={activeSimnetAccount}
+                    onSimnetAccountChange={onSimnetAccountChange}
+                    onGoToInteract={onGoToInteract}
                 />
             )}
         </div>
     );
 
+    const renderCall = () => {
+        return (
+            <ContractPanel
+                onOpenContractCall={onOpenContractCall}
+                prefilledContractInfo={prefilledContractInfo}
+                setPrefilledContractInfo={setPrefilledContractInfo}
+                activeSimnetAccount={activeSimnetAccount}
+                network={settings?.network || 'simnet'}
+                deployedContracts={deployedContracts}
+            />
+        )
+    }
     const renderSettings = () => (
         <div className="flex flex-col h-full">
             <div className="p-4 border-b border-caspier-border bg-caspier-black">
@@ -1537,7 +1580,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                     />
                                 </InputGroup>
                             ) : (
-                                <div className="p-3 bg-caspier-black/40 border border-caspier-border rounded-lg mb-4">
+                                <div className="p-3 bg-caspier-black/40 border border-caspier-border  mb-4">
                                     <div className="text-[10px] font-black text-labstx-orange uppercase tracking-[0.2em] mb-1">Using System Key</div>
                                     <div className="text-[11px] text-caspier-muted italic font-medium">The IDE is using the pre-configured OpenRouter key from the environment.</div>
                                 </div>
@@ -1563,7 +1606,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     );
 
     const renderActivityHistory = () => {
-        const filteredContracts = deployedContracts.filter(c => {
+        const filteredContracts = (deployedContracts || []).filter(c => {
             const matchesSearch = c.name.toLowerCase().includes(contractSearchQuery.toLowerCase()) ||
                 c.contractHash.toLowerCase().includes(contractSearchQuery.toLowerCase());
 
@@ -1590,7 +1633,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         <ActivityIcon className="w-3.5 h-3.5 text-labstx-orange" />
                         <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Activity History</h2>
                     </div>
-                    {deployedContracts.length > 0 && (
+                    {(deployedContracts || []).length > 0 && (
                         <button
                             onClick={() => {
                                 if (window.confirm('Are you sure you want to permanently clear ALL deployment history? This cannot be undone.')) {
@@ -1639,7 +1682,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     </div>
 
                     {selectedActivityIds.length > 0 && (
-                        <div className="flex items-center justify-between p-2 bg-labstx-orange/10 border border-labstx-orange/30 rounded-lg animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-2 bg-labstx-orange/10 border border-labstx-orange/30  animate-in zoom-in-95 duration-200">
                             <span className="text-[10px] font-black text-labstx-orange uppercase tracking-widest">
                                 {selectedActivityIds.length} Selected
                             </span>
@@ -1659,12 +1702,12 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                     )}
 
 
-                    <div className="space-y-3 p-2 bg-caspier-black/40 border border-caspier-border rounded-lg animate-in slide-in-from-top-1 duration-200">
+                    <div className="space-y-3 p-2 bg-caspier-black/40 border border-caspier-border  animate-in slide-in-from-top-1 duration-200">
                         {/* Network Filter */}
                         <div>
                             <label className="text-[9px] font-black text-caspier-muted uppercase tracking-widest mb-1.5 block">Network</label>
                             <div className="grid grid-cols-4 gap-1">
-                                {(['all', 'mainnet', 'testnet'] as const).map((net) => (
+                                {(['all', 'simnet', 'testnet', 'mainnet'] as const).map((net) => (
                                     <button
                                         key={net}
                                         onClick={() => setContractNetworkFilter(net)}
@@ -1729,7 +1772,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
                 </div>
                 <div className="flex-1 overflow-y-auto px-2 py-3 bg-caspier-dark/20">
-                    {deployedContracts.length === 0 ? (
+                    {(deployedContracts || []).length === 0 ? (
                         <div className="text-caspier-muted text-[11px] font-bold text-center mt-8 opacity-40 italic">
                             No deployment history found.
                         </div>
@@ -1758,13 +1801,20 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                     </div>
 
                                     <div
-                                        onClick={() => onContractClick?.(contract)}
-                                        className={`flex-1 p-2.5 rounded-lg border transition-all cursor-pointer relative overflow-hidden flex flex-col gap-1.5 ${selectedActivityIds.includes(contract.id)
+                                        // onClick={() => onContractClick?.(contract)}
+                                        className={`flex-1 p-2.5  border transition-all cursor-pointer relative overflow-hidden flex flex-col gap-1.5 ${selectedActivityIds.includes(contract.id)
                                             ? 'border-labstx-orange bg-labstx-orange/5'
                                             : 'border-caspier-border bg-caspier-black hover:border-labstx-orange hover:bg-labstx-orange/5'}`}
                                     >
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                                                {contract.activityType === 'query' ? (
+                                                    <ArrowUpDown className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                                                ) : contract.activityType === 'call' ? (
+                                                    <FunctionIcon className="w-6 h-6 text-purple-400 flex-shrink-0" />
+                                                ) : (
+                                                    <SmartFileIcon name={contract.name.endsWith('.clar') ? contract.name : `${contract.name}.clar`} className="w-3.5 h-3.5 text-labstx-orange flex-shrink-0" />
+                                                )}
                                                 <span className="text-[11px] font-black text-caspier-text truncate group-hover:text-labstx-orange transition-colors uppercase tracking-tight">
                                                     {contract.name}
                                                 </span>
@@ -1788,11 +1838,16 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
+                                                            if (contract.network === 'simnet') {
+                                                                onAddTerminalLine?.({ type: 'info', content: 'Explorer is not available for local Simnet deployments.' });
+                                                                return;
+                                                            }
                                                             const chain = contract.network.toLowerCase() === 'mainnet' ? 'mainnet' : 'testnet';
                                                             window.open(`https://explorer.hiro.so/txid/${contract.deployHash}?chain=${chain}`, '_blank');
                                                         }}
-                                                        className="p-1 text-caspier-muted hover:text-labstx-orange hover:bg-labstx-orange/10 rounded"
-                                                        title="View in Explorer"
+                                                        className={`p-1 rounded ${contract.network === 'simnet' ? 'text-caspier-muted/30 cursor-not-allowed' : 'text-caspier-muted hover:text-labstx-orange hover:bg-labstx-orange/10'}`}
+                                                        title={contract.network === 'simnet' ? "Explorer Unavailable (Simnet)" : "View in Explorer"}
+                                                        disabled={contract.network === 'simnet'}
                                                     >
                                                         <GlobeIcon className="w-3 h-3" />
                                                     </button>
@@ -1820,6 +1875,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                                             <div className="flex items-center gap-1.5 text-[9px] text-caspier-muted font-bold">
                                                 <ActivityIcon className="w-3 h-3 opacity-40 flex-shrink-0" />
                                                 <span className="uppercase tracking-tighter opacity-60">{contract.network}</span>
+                                                {contract.activityType === 'query' ? (
+                                                    <span className="flex items-center uppercase tracking-tighter opacity-60 bg-blue-400/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-600"> <ArrowUpDown className="w-3 h-3 mr-1" />   Query state</span>
+                                                ) : contract.activityType === 'call' ? (
+                                                    <span className="flex items-center uppercase tracking-tighter opacity-60 bg-purple-400/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-600"> <FunctionIcon className="w-3 h-3 mr-1" /> Call function</span>
+                                                ) : (
+                                                    <span className="flex items-center uppercase tracking-tighter opacity-60 bg-labstx-orange/10 text-labstx-orange px-2 py-0.5 rounded-full border border-labstx-orange"> <SmartFileIcon name={contract.name.endsWith('.clar') ? contract.name : `${contract.name}.clar`} className="w-3 h-3 mr-1" /> Deploy contract</span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1862,6 +1924,82 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         </div>
     );
 
+    const renderHelpWalkthrough = () => {
+        const tours = [
+            {
+                id: 'compile-deploy',
+                title: 'Compile & Deploy a Contract',
+                status: 'New',
+                steps: 8,
+                description: 'Step-by-step guide to compiling and deploying your first smart contract.',
+                type: 'walkthrough',
+                statusColor: 'bg-blue-500'
+            },
+            {
+                id: 'getting-started',
+                title: 'Getting Started with LabSTX',
+                status: 'Done',
+                steps: 7,
+                description: 'A quick tour of the LabSTX IDE interface and basic features.',
+                type: 'walkthrough',
+                statusColor: 'bg-emerald-500'
+            }
+        ];
+
+        return (
+            <div className="flex flex-col h-full bg-caspier-black">
+                <div className="p-4 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
+                    <div className="flex items-center gap-2">
+                        <CircleQuestionMarkIcon className="w-3.5 h-3.5 text-labstx-orange" />
+                        <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Help and Walkthrough</h2>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    {tours.map((tour, idx) => (
+                        <div key={idx} className="p-4 bg-caspier-dark/40 border border-caspier-border  space-y-3 hover:border-labstx-orange/30 transition-all group">
+                            <div className="flex justify-between items-start">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded text-white ${tour.statusColor}`}>
+                                            {tour.status}
+                                        </span>
+                                        <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest">
+                                            {tour.steps} steps
+                                        </span>
+                                    </div>
+                                    <h3 className="text-[11px] font-black text-caspier-text uppercase leading-tight group-hover:text-labstx-orange transition-colors">
+                                        {tour.title}
+                                    </h3>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-caspier-muted font-bold leading-relaxed">
+                                {tour.description}
+                            </p>
+                            <div className="flex items-center justify-between pt-1">
+                                <span className="text-[9px] font-black text-caspier-muted/50 uppercase tracking-widest italic">
+                                    {tour.type}
+                                </span>
+                                <button
+                                    className="px-3 py-1 bg-labstx-orange/10 hover:bg-labstx-orange text-labstx-orange hover:text-white border border-labstx-orange/20 rounded-full text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
+                                    onClick={() => onStartTour?.(tour.id)}
+                                >
+                                    Start Tour
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+
+                    <div className="hidden mt-4 p-4 border border-dashed border-caspier-border rounded-xl flex flex-col items-center text-center gap-2 opacity-60">
+                        <InfoIcon className="w-5 h-5 text-caspier-muted" />
+                        <p className="text-[10px] text-caspier-muted font-bold leading-relaxed italic">
+                            More guides and interactive tutorials coming soon to help you master Clarity development.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderPlaceholder = () => (
         <div className="flex flex-col h-full">
             <div className="p-4 border-b border-caspier-border bg-caspier-black">
@@ -1875,17 +2013,409 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         switch (activeView) {
             case ActivityView.EXPLORER: return renderExplorer();
             case ActivityView.SEARCH: return renderSearch();
+            case ActivityView.CALL_CONTRACT: return renderCall();
             case ActivityView.GIT: return renderGit();
             case ActivityView.DEPLOY: return renderDeploy();
             case ActivityView.ACTIVITY_HISTORY: return renderActivityHistory();
             case ActivityView.LEARN_STX: return renderLearnSTX();
             case ActivityView.SETTINGS: return renderSettings();
+            case ActivityView.SIMNET: return renderSimnet();
+            case ActivityView.UNIT_TEST: return renderClarityUnitTest();
+            case ActivityView.HELP_WALKTHROUGH: return renderHelpWalkthrough();
             default: return renderPlaceholder();
         }
     };
 
+    const renderClarityUnitTest = () => {
+        const handleRunTests = async () => {
+            onAddTerminalLine?.({ type: 'command', content: `🚀 Starting Simnet Test Suite...` });
+
+            try {
+                const { getSimnet, runExclusively, resetSimnet } = await import('../../services/stacks/simnet');
+                const { Cl: RealCl } = await import('@stacks/transactions');
+
+                // 1. Reset and Initialize
+                resetSimnet();
+                const rawSimnet = await getSimnet();
+                const deployer = (rawSimnet as any).deployer || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
+
+                // 2. Locate Folders Recursively
+                const findFolderRecursive = (nodes: FileNode[], targetName: string): FileNode | null => {
+                    for (const node of nodes) {
+                        if (node.type === 'folder' && node.name === targetName) return node;
+                        if (node.children) {
+                            const found = findFolderRecursive(node.children, targetName);
+                            if (found) return found;
+                        }
+                    }
+                    return null;
+                };
+
+                const contractsFolder = findFolderRecursive(files, 'contracts');
+                const testFolder = findFolderRecursive(files, 'tests');
+
+                const clarFiles = contractsFolder?.children?.filter(f =>
+                    f.type === 'file' && f.name.endsWith('.clar') && f.content
+                ) || [];
+
+                onAddTerminalLine?.({ type: 'info', content: `🔍 Found ${clarFiles.length} contracts and ${testFolder?.children?.length || 0} test files.` });
+
+                if (clarFiles.length === 0) {
+                    onAddTerminalLine?.({ type: 'error', content: 'No contracts found in "contracts/".' });
+                    return;
+                }
+
+                // 3. SMART DEPLOYMENT: Sort by Dependency
+                // Traits must be deployed before contracts that implement them.
+                const traitFiles = clarFiles.filter(f => f.content?.includes('define-trait'));
+                const standardFiles = clarFiles.filter(f => !f.content?.includes('define-trait'));
+                const sortedFiles = [...traitFiles, ...standardFiles];
+
+                const deployedContracts = new Set<string>();
+
+                for (const file of sortedFiles) {
+                    const contractName = file.name.replace('.clar', '');
+                    onAddTerminalLine?.({ type: 'info', content: `📦 Deploying ${contractName}...` });
+
+                    try {
+                        await runExclusively(async (s) => {
+                            return s.deployContract(contractName, file.content!, null, deployer);
+                        });
+                        deployedContracts.add(contractName);
+                    } catch (err: any) {
+                        const msg = String(err?.message || err).toLowerCase();
+                        if (msg.includes('already exists') || msg.includes('duplicate')) {
+                            deployedContracts.add(contractName);
+                        } else {
+                            onAddTerminalLine?.({ type: 'error', content: `  ✗ Deployment Failed: ${file.name}\n    ${err.message}` });
+                        }
+                    }
+                }
+
+                // 4. ROBUST SIMNET WRAPPER
+                const testSimnet = {
+                    deployer,
+                    getAccounts: () => {
+                        const nativeMap = (rawSimnet as any).getAccounts?.();
+
+                        // Fallback wallets since the browser lacks a Clarinet.toml
+                        const defaultMap = new Map([
+                            ['deployer', deployer],
+                            ['wallet_1', 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5'],
+                            ['wallet_2', 'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG'],
+                            ['wallet_3', 'ST2JHG361ZXG51QTKY2NQCVBPPRRE2KZB1HR05NNC']
+                        ]);
+
+                        // If native is empty or only has the deployer, use defaults
+                        if (!nativeMap || nativeMap.size < 2) return defaultMap;
+
+                        // Ensure we return strings (some SDK versions return Account objects)
+                        const safeMap = new Map();
+                        nativeMap.forEach((val: any, key: string) => {
+                            safeMap.set(key, typeof val === 'string' ? val : val.address);
+                        });
+                        return safeMap;
+                    },
+
+                    // Helper to ensure the contract exists before calling
+                    _safeCall: (contract: string, fn: string, type: 'public' | 'read', args: any[], sender: string) => {
+                        const nameOnly = contract.includes('.') ? contract.split('.')[1] : contract;
+                        if (!deployedContracts.has(nameOnly) && !contract.includes('.')) {
+                            throw new Error(`Cannot call ${fn}: Contract "${nameOnly}" was not deployed.`);
+                        }
+                        const fullPath = contract.includes('.') ? contract : `${deployer}.${contract}`;
+                        const method = type === 'public' ? 'callPublicFn' : 'callReadOnlyFn';
+                        const result = (rawSimnet as any)[method](fullPath, fn, args || [], sender || deployer);
+
+                        if (result === undefined) {
+                            throw new Error(`Execution error in ${fn}: Simnet returned undefined.`);
+                        }
+                        return result;
+                    },
+
+                    callPublicFn: (c: string, f: string, a: any[], s: string) => testSimnet._safeCall(c, f, 'public', a, s),
+                    callReadOnlyFn: (c: string, f: string, a: any[], s: string) => testSimnet._safeCall(c, f, 'read', a, s),
+                    getDataVar: (c: string, v: string) => (rawSimnet as any).getDataVar?.(`${deployer}.${c}`, v),
+                };
+
+                // 5. TEST EXECUTION ENGINE
+                const testFiles = testFolder?.children?.filter(f => f.name.endsWith('.test.ts')) || [];
+
+                let totalPass = 0, totalFail = 0;
+
+                for (const testFile of testFiles) {
+                    onAddTerminalLine?.({ type: 'command', content: `\n▶ FILE: ${testFile.name}` });
+
+                    const testResults: { name: string; passed: boolean; error?: string }[] = [];
+                    const queue: Promise<void>[] = [];
+
+                    const context = {
+                        describe: (name: string, fn: Function) => {
+                            onAddTerminalLine?.({ type: 'info', content: `  Group: ${name}` });
+                            fn();
+                        },
+                        it: (name: string, fn: Function) => {
+                            queue.push((async () => {
+                                try {
+                                    await fn();
+                                    testResults.push({ name, passed: true });
+                                } catch (e: any) {
+                                    testResults.push({ name, passed: false, error: e.message });
+                                }
+                            })());
+                        },
+                        expect: (val: any) => {
+                            // True deep equality that correctly handles nested BigInts
+                            const cvDeepEqual = (a: any, b: any): boolean => {
+                                if (a === b) return true;
+                                if (typeof a === 'bigint' || typeof b === 'bigint') return String(a) === String(b);
+                                if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false;
+
+                                const keysA = Object.keys(a);
+                                if (keysA.length !== Object.keys(b).length) return false;
+
+                                return keysA.every(k => cvDeepEqual((a as any)[k], (b as any)[k]));
+                            };
+
+                            const res = val?.result ?? val;
+
+                            return {
+                                toBeOk: (expected?: any) => {
+                                    if (res?.type !== 'ok') throw new Error(`Expected (ok...), got ${RealCl.prettyPrint(res)}`);
+                                    if (expected !== undefined) {
+                                        const actualVal = res.value;
+                                        if (!cvDeepEqual(actualVal, expected)) {
+                                            throw new Error(`Expected (ok ${RealCl.prettyPrint(expected)}), got (ok ${RealCl.prettyPrint(actualVal)})`);
+                                        }
+                                    }
+                                },
+                                toBeErr: (expected?: any) => {
+                                    if (res?.type !== 'err') throw new Error(`Expected (err...), got ${RealCl.prettyPrint(res)}`);
+                                    if (expected !== undefined) {
+                                        const actualVal = res.value;
+                                        if (!cvDeepEqual(actualVal, expected)) {
+                                            throw new Error(`Expected (err ${RealCl.prettyPrint(expected)}), got (err ${RealCl.prettyPrint(actualVal)})`);
+                                        }
+                                    }
+                                },
+                                toBeUint: (expected: number | bigint) => {
+                                    const actualVal = res?.value ?? res;
+                                    if (String(actualVal) !== String(expected)) {
+                                        throw new Error(`Expected u${expected}, got ${RealCl.prettyPrint(res)}`);
+                                    }
+                                }
+                            };
+                        }
+                    };
+
+                    // Clean TS to JS
+                    const jsCode = testFile.content!
+                        .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '') // Remove imports
+                        .replace(/export\s+/g, '')                             // Remove exports
+                        .replace(/(\w+)!/g, '$1');                             // Remove non-null assertions
+
+                    try {
+                        const runner = new Function('describe', 'it', 'expect', 'simnet', 'Cl', jsCode);
+                        runner(context.describe, context.it, context.expect, testSimnet, RealCl);
+                        await Promise.all(queue);
+
+                        testResults.forEach(r => {
+                            if (r.passed) {
+                                totalPass++;
+                                onAddTerminalLine?.({ type: 'success', content: `    ✓ ${r.name}` });
+                            } else {
+                                totalFail++;
+                                onAddTerminalLine?.({ type: 'error', content: `    ✗ ${r.name}\n      → ${r.error}` });
+                            }
+                        });
+                    } catch (e: any) {
+                        onAddTerminalLine?.({ type: 'error', content: `  🔥 Runtime Error: ${e.message}` });
+                    }
+                }
+
+                onAddTerminalLine?.({
+                    type: totalFail === 0 ? 'success' : 'error',
+                    content: `\nFINISH: ${totalPass} passed, ${totalFail} failed.`
+                });
+
+            } catch (critical: any) {
+                onAddTerminalLine?.({ type: 'error', content: `Critical Runner Failure: ${critical.message}` });
+            }
+        };
+
+        const handleCreateTestFolder = () => {
+            const folderExists = files.find(f => f.name === testDirectory && f.type === 'folder');
+            if (!folderExists) {
+                onCreateNode('root', 'folder', testDirectory);
+                onAddTerminalLine?.({ type: 'success', content: `Created test directory: ${testDirectory}` });
+            } else {
+                onAddTerminalLine?.({ type: 'info', content: `Test directory "${testDirectory}" already exists.` });
+            }
+        };
+
+        const handleGenerateTests = () => {
+            const contractsFolder = files.find(f => f.name === 'contracts' && f.type === 'folder');
+            if (!contractsFolder || !contractsFolder.children) {
+                onAddTerminalLine?.({ type: 'error', content: 'No "contracts/" folder found in the root directory.' });
+                return;
+            }
+
+            const clarFiles = contractsFolder.children.filter(f => f.type === 'file' && f.name.endsWith('.clar'));
+            if (clarFiles.length === 0) {
+                onAddTerminalLine?.({ type: 'warning', content: 'No .clar files found in "contracts/" folder.' });
+                return;
+            }
+
+            // Find or prepare the new files
+            let updatedFiles = JSON.parse(JSON.stringify(files)); // Deep clone to avoid direct mutations
+            let testsFolder = updatedFiles.find((f: any) => f.name === testDirectory && f.type === 'folder');
+
+            if (!testsFolder) {
+                testsFolder = {
+                    id: `folder-${testDirectory}-${Date.now()}`,
+                    name: testDirectory,
+                    type: 'folder',
+                    children: [],
+                    isOpen: true
+                };
+                updatedFiles.push(testsFolder);
+            }
+
+            let generatedCount = 0;
+            clarFiles.forEach(clarFile => {
+                const baseName = clarFile.name.replace('.clar', '');
+                const testFileName = `${baseName}.test.ts`;
+
+                const existingTest = testsFolder.children.find((f: any) => f.name === testFileName);
+                if (!existingTest) {
+                    const boilerplate = `import {expect, it, describe} from "vitest";
+
+                        describe("${baseName} contract", () => {
+                            it("ensures that the contract is deployed", () => {
+                                // @ts-ignore
+                                const { artifacts } = simnet;
+                                const contract = artifacts.get("${baseName}");
+                                expect(contract).toBeDefined();
+                            });
+
+  // Add more tests for ${baseName} here
+});`;
+
+                    testsFolder.children.push({
+                        id: `file-${testFileName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        name: testFileName,
+                        type: 'file',
+                        content: boilerplate,
+                        language: 'typescript'
+                    });
+                    generatedCount++;
+                }
+            });
+
+            if (generatedCount > 0) {
+                if (onUpdateFiles) {
+                    onUpdateFiles(updatedFiles);
+                    onAddTerminalLine?.({ type: 'success', content: `Generated ${generatedCount} test file(s) in "${testDirectory}/".` });
+                }
+            } else {
+                onAddTerminalLine?.({ type: 'info', content: 'All test files already exist.' });
+            }
+        };
+
+        return (
+            <div className="flex flex-col h-full bg-caspier-black">
+                <div className="flex items-center justify-between p-4 border-b border-caspier-border bg-caspier-black">
+                    <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">CLARITY UNIT TESTING</h2> <p className=' text-amber-500 border border-amber-500 w-fit px-2 py-1 rounded-full mt-2 text-[10px]'> Experimental</p>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    <div className="p-4 space-y-6">
+                        <div className="space-y-3">
+                            <p className="text-[11px] text-caspier-muted font-bold leading-relaxed">
+                                Test your smart contract in Clarity. Select directory to load and generate test files.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black text-caspier-muted uppercase tracking-widest">Test directory:</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={testDirectory}
+                                    onChange={(e) => setTestDirectory(e.target.value)}
+                                    className="flex-1 bg-caspier-dark border border-caspier-border text-white text-[11px] font-medium px-2 py-1.5 focus:border-labstx-orange outline-none rounded"
+                                    placeholder="tests"
+                                />
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="text-[10px] font-black uppercase px-4 rounded-md border border-caspier-border hover:border-labstx-orange transition-colors"
+                                    onClick={handleCreateTestFolder}
+                                >
+                                    Create
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-5 pt-2">
+
+                            <Button
+                                variant="secondary"
+                                className=" text-[10px] font-black uppercase py-2 bg-caspier-black hover:bg-caspier-black/90 text-caspier-text       active:scale-95 transition-all gap-1.5"
+                                onClick={handleGenerateTests}
+                            >
+                                <PlusIcon className="w-3 h-3" />    Generate
+                            </Button>
+                            <Button
+                                variant="primary"
+                                className=" text-[10px] font-black uppercase py-2 bg-caspier-black hover:bg-caspier-hover text-caspier-text active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5"
+                                onClick={handleRunTests}
+                                title="Run Tests with Simnet"
+                            >
+                                <RocketIcon className="w-3 h-3" />
+                                Run
+                            </Button>
+
+                        </div>
+
+                        <div className="mt-8 p-4 bg-caspier-dark/30 border border-caspier-border rounded-xl">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-labstx-orange animate-pulse" />
+                                <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest">Test Runner Tip</span>
+                            </div>
+                            <p className="text-[10px] text-caspier-muted font-bold leading-relaxed italic">
+
+                                <span className="text-labstx-orange"> &gt;</span> Ensure that the test directory exists and contains the Clarity contracts you want to test or click generate to create boilerplate test files.
+
+                            </p>
+
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSimnet = () => {
+        const simnetAccounts = [
+            'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM', // Account 1 (Deployer)
+        ];
+
+        // Try to get dynamic accounts if possible (we'll use the service in App.tsx to pass them)
+        // For now using the most common ones.
+
+        return (
+            <DeployPanell walletConnection={{
+                address: 'ST33KVQG68Y9737BMTC6J9PY4GXC2D5K0GG63GHT2',
+                type: 'xverse',
+                network: 'testnet'
+
+            }} />
+        );
+    };
+
     return (
-        <div style={{ width }} className="relative flex-shrink-0 bg-caspier-dark border-r border-caspier-border flex flex-col h-full overflow-hidden">
+        <div style={{ width }} className="relative select-none flex-shrink-0 bg-caspier-dark border-r border-caspier-border flex flex-col h-full overflow-hidden">
             {renderContent()}
 
             {/* New Project Dialog is now a tab */}

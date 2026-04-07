@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
+import { ClarityLSP } from '../../services/clarityLsp';
 import { ProjectSettings } from '../../types';
 
 // --- Helper: Standard debounce hook ---
@@ -228,6 +229,64 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
           'editor.selectionBackground': '#007bff1a',
         }
       });
+
+      // --- REGISTER CLARITY LSP FEATURES ---
+      const completionDisp = monaco.languages.registerCompletionItemProvider('clarity', {
+        provideCompletionItems: (model: any, position: any) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn
+          };
+          return ClarityLSP.getCompletions(monaco, range);
+        }
+      });
+
+      const hoverDisp = monaco.languages.registerHoverProvider('clarity', {
+        provideHover: (model: any, position: any) => {
+          const word = model.getWordAtPosition(position);
+          if (!word) return null;
+          return ClarityLSP.getHover(word.word);
+        }
+      });
+
+      const defDisp = monaco.languages.registerDefinitionProvider('clarity', {
+        provideDefinition: (model: any, position: any) => {
+          const word = model.getWordAtPosition(position);
+          if (!word) return null;
+          return ClarityLSP.getDefinitions(model.getValue(), word.word, monaco);
+        }
+      });
+
+      const sigDisp = monaco.languages.registerSignatureHelpProvider('clarity', {
+        signatureHelpTriggerCharacters: ['(', ' '],
+        provideSignatureHelp: (model: any, position: any) => {
+          const textUntilPosition = model.getValueInRange({
+            startLineNumber: position.lineNumber,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column
+          });
+          const lastOpenParen = textUntilPosition.lastIndexOf('(');
+          if (lastOpenParen !== -1) {
+            const funcNameMatch = textUntilPosition.substring(lastOpenParen + 1).match(/^([\w\+\-\*\/]+)/);
+            if (funcNameMatch) {
+              const help = ClarityLSP.getSignatureHelp(funcNameMatch[1]);
+              return help ? { value: help, dispose: () => { } } : null;
+            }
+          }
+          return null;
+        }
+      });
+
+      return () => {
+        completionDisp.dispose();
+        hoverDisp.dispose();
+        defDisp.dispose();
+        sigDisp.dispose();
+      };
     }
   }, [monaco]);
 
@@ -237,6 +296,40 @@ const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
       monaco.editor.setTheme(theme === 'dark' ? 'caspier-dark' : 'caspier-light');
     }
   }, [monaco, theme]);
+
+  // --- CLARITY DIAGNOSTICS (Bracket Matching) ---
+  useEffect(() => {
+    if (!monaco || !editorRef.current || mapLanguage(language) !== 'clarity') return;
+
+    const model = editorRef.current.getModel();
+    if (!model) return;
+
+    const validate = () => {
+      const markers = ClarityLSP.getDiagnostics(model.getValue());
+      monaco.editor.setModelMarkers(model, 'claritylsp', markers);
+    };
+
+    // Initial validation
+    validate();
+
+    // Trigger on content change (debounced)
+    let timer: ReturnType<typeof setTimeout>;
+    const disposable = model.onDidChangeContent(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        validate();
+      }, 500);
+    });
+
+    return () => {
+      disposable.dispose();
+      clearTimeout(timer);
+      // Clear markers if we switch language away from clarity
+      if (model.isAttachedToEditor()) {
+        monaco.editor.setModelMarkers(model, 'claritylsp', []);
+      }
+    };
+  }, [monaco, language, activeFileId]);
 
   const mapLanguage = (lang: string) => {
     if (lang === 'rust' || lang === 'rs') return 'rust';

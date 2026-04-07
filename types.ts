@@ -5,12 +5,16 @@ export enum ActivityView {
     EXPLORER = 'EXPLORER',
     SEARCH = 'SEARCH',
     DEPLOY = 'DEPLOY',
+    CALL_CONTRACT = 'CALL',
     LEARN_STACKS = 'LEARN_STACKS',
     ACTIVITY_HISTORY = 'ACTIVITY_HISTORY',
-    LEARAN_STX = 'LEARN_STX', // Note: keep 'LEARAN_STX' if it's used in components (I saw 'LEARN_STX' earlier, let's check)
+    LEARAN_STX = 'LEARN_STX',
     LEARN_STX = 'LEARN_STX',
     SETTINGS = 'SETTINGS',
-    STATISTICS = 'STATISTICS'
+    STATISTICS = 'STATISTICS',
+    SIMNET = 'SIMNET',
+    UNIT_TEST = 'UNIT_TEST',
+    HELP_WALKTHROUGH = 'HELP_WALKTHROUGH'
 }
 
 // File and Folder Structure
@@ -48,7 +52,7 @@ export interface ProjectSettings {
     tabSize: number;
     autoCompile: boolean;
     enableOptimization: boolean;
-    network: 'testnet' | 'mainnet' | 'mocknet';
+    network: 'testnet' | 'mainnet' | 'mocknet' | 'simnet';
     clarityVersion: string;
     aiProvider: string;
     aiModel: string;
@@ -56,6 +60,7 @@ export interface ProjectSettings {
     openRouterKeySource: string;
     aiCustomContext?: string;
     theme?: 'dark' | 'light';
+    activeSimnetAccount?: string;
 }
 
 // Git Integration
@@ -91,7 +96,8 @@ export interface WalletConnection {
     type: 'none' | 'leather' | 'xverse';
     connected: boolean;
     address?: string;
-    network?: 'testnet' | 'mainnet' | 'mocknet';
+    publicKey?: string;
+    network?: 'testnet' | 'mainnet' | 'mocknet' | 'simnet';
     addresses?: {
         mainnet: string;
         testnet: string;
@@ -142,6 +148,7 @@ export interface DeployedContract {
     deployHash: string;
     network: string;
     timestamp: number;
+    activityType?: 'deploy' | 'call' | 'query';
     originalFileId?: string;
     entryPoints?: EntryPoint[];
 }

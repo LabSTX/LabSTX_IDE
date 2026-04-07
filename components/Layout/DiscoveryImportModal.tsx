@@ -81,10 +81,10 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
         setIsSubmitting(true);
         setError(null);
         try {
-            const selectedIds = importType === 'wallet' 
+            const selectedIds = importType === 'wallet'
                 ? discoveredContracts.filter(c => c.selected).map(c => c.id)
                 : undefined;
-                
+
             await onImport(importType, inputValue.trim(), network, selectedIds);
             setInputValue('');
             setStep('input');
@@ -98,7 +98,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
     };
 
     const toggleContract = (id: string) => {
-        setDiscoveredContracts(prev => prev.map(c => 
+        setDiscoveredContracts(prev => prev.map(c =>
             c.id === id ? { ...c, selected: !c.selected } : c
         ));
     };
@@ -174,7 +174,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-1.5 hover:bg-labstx-orange hover:text-white rounded-full text-caspier-muted transition-all"
+                        className="p-1.5 hover:bg-labstx-orange hover:text-caspier-text rounded-full text-caspier-muted transition-all"
                     >
                         <XIcon className="w-5 h-5" />
                     </button>
@@ -190,7 +190,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                     key={t.id}
                                     onClick={() => { setImportType(t.id); setError(null); setStep('input'); setDiscoveredContracts([]); }}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${importType === t.id
-                                        ? 'bg-labstx-orange border-labstx-orange text-white shadow-lg'
+                                        ? 'bg-labstx-orange border-labstx-orange text-caspier-text shadow-lg'
                                         : 'bg-caspier-black border-caspier-border text-caspier-muted hover:border-caspier-border hover:text-caspier-text'
                                         }`}
                                 >
@@ -241,7 +241,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                 <input
                                     autoFocus
                                     type="text"
-                                    className={`w-full bg-caspier-black border-2 ${error ? 'border-red-500/50' : 'border-caspier-border'} focus:border-labstx-orange text-white px-4 py-3 rounded-xl outline-none transition-all placeholder:text-caspier-muted/50 text-sm font-mono`}
+                                    className={`w-full bg-caspier-black border-2 ${error ? 'border-red-500/50' : 'border-caspier-border'} focus:border-labstx-orange text-caspier-text px-4 py-3 rounded-xl outline-none transition-all placeholder:text-caspier-muted/50 text-sm font-mono`}
                                     placeholder={config.placeholder}
                                     value={inputValue}
                                     onChange={(e) => setInputValue(e.target.value)}
@@ -265,7 +265,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                 disabled={isSubmitting || !inputValue.trim()}
                                 className={`w-full py-3 rounded-xl font-black uppercase tracking-[0.2em] text-xs transition-all flex items-center justify-center gap-2 ${isSubmitting || !inputValue.trim()
                                     ? 'bg-caspier-border text-caspier-muted cursor-not-allowed'
-                                    : 'bg-labstx-orange text-white hover:shadow-[0_4px_15px_-5px_rgba(240,80,35,0.5)] active:scale-[0.98]'
+                                    : 'bg-labstx-orange text-caspier-text hover:shadow-[0_4px_15px_-5px_rgba(240,80,35,0.5)] active:scale-[0.98]'
                                     }`}
                             >
                                 {isSubmitting ? 'Fetching...' : importType === 'wallet' ? 'Find Contracts' : `Import via ${importType.replace('_', ' ')}`}
@@ -278,13 +278,13 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                     Select Contracts ({discoveredContracts.filter(c => c.selected).length}/{discoveredContracts.length})
                                 </div>
                                 <div className="flex gap-3">
-                                    <button 
+                                    <button
                                         onClick={() => selectAll(true)}
                                         className="text-[9px] font-black uppercase tracking-widest text-labstx-orange hover:underline"
                                     >
                                         Select All
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => selectAll(false)}
                                         className="text-[9px] font-black uppercase tracking-widest text-caspier-muted hover:text-caspier-text"
                                     >
@@ -295,7 +295,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
 
                             <div className="max-h-48 overflow-y-auto border-2 border-caspier-border rounded-xl bg-caspier-black divide-y divide-caspier-border">
                                 {discoveredContracts.map(contract => (
-                                    <div 
+                                    <div
                                         key={contract.id}
                                         onClick={() => toggleContract(contract.id)}
                                         className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors ${contract.selected ? 'bg-labstx-orange/5' : ''}`}
@@ -304,7 +304,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                             {contract.selected && <div className="w-2 h-2 bg-white rounded-sm" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className={`text-xs font-bold truncate ${contract.selected ? 'text-white' : 'text-caspier-muted'}`}>{contract.name}</div>
+                                            <div className={`text-xs font-bold truncate ${contract.selected ? 'text-caspier-text' : 'text-caspier-muted'}`}>{contract.name}</div>
                                             <div className="text-[9px] font-mono text-caspier-muted truncate">{contract.id.split('.')[0]}</div>
                                         </div>
                                     </div>
@@ -324,7 +324,7 @@ export const DiscoveryImportModal: React.FC<DiscoveryImportModalProps> = ({
                                     disabled={isSubmitting || discoveredContracts.filter(c => c.selected).length === 0}
                                     className={`flex-[2] py-3 rounded-xl font-black uppercase tracking-[0.2em] text-xs transition-all flex items-center justify-center gap-2 ${isSubmitting || discoveredContracts.filter(c => c.selected).length === 0
                                         ? 'bg-caspier-border text-caspier-muted cursor-not-allowed'
-                                        : 'bg-labstx-orange text-white hover:shadow-[0_4px_15px_-5px_rgba(240,80,35,0.5)] active:scale-[0.98]'
+                                        : 'bg-labstx-orange text-caspier-text hover:shadow-[0_4px_15px_-5px_rgba(240,80,35,0.5)] active:scale-[0.98]'
                                         }`}
                                 >
                                     {isSubmitting ? 'Importing...' : 'Import Selected'}

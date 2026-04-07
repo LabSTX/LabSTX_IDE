@@ -1,5 +1,7 @@
 import { init, initSimnet, Simnet } from '@stacks/clarinet-sdk-browser';
 
+import wasmUrl from '@stacks/clarinet-sdk-wasm-browser/clarinet_sdk_bg.wasm?url';
+
 let simnetInstance: Simnet | null = null;
 let initPromise: Promise<Simnet> | null = null;
 let isWasmLoaded = false;
@@ -11,88 +13,89 @@ let executionQueue: Promise<void> = Promise.resolve();
 /**
  * Initializes the WASM engine and a fresh Simnet session.
  */
-export async function getSimnet(): Promise<Simnet> {
+/**
+ * Boots the WASM engine and returns the raw Simnet instance.
+ * Does NOT initialize a session.
+ */
+export async function getRawSimnet(): Promise<Simnet> {
     if (simnetInstance) return simnetInstance;
-
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        try {
-            console.log("[Simnet] Creating environment...");
-
-            // 1. Load WASM binary using the modern object-based API
-            if (!isWasmLoaded) {
-                console.log("[Simnet] Loading WASM from /clarinet_sdk_bg.wasm");
-                try {
-                    // Try named export 'init'
-                    await init({ module_or_path: '/clarinet_sdk_bg.wasm' });
-                    isWasmLoaded = true;
-                    console.log("[Simnet] WASM loaded successfully.");
-                } catch (wasmError) {
-                    console.warn("[Simnet] Modern init failed, trying legacy path...", wasmError);
-                    try {
-                        await init('/clarinet_sdk_bg.wasm');
-                        isWasmLoaded = true;
-                    } catch (e2) {
-                        console.error("[Simnet] Failed to load WASM binary. Debugger will not work.", e2);
-                        throw e2;
-                    }
-                }
-            }
-
-            // 2. Create the SDK instance
-            const instance = await initSimnet();
-
-            // 3. Initialize the session
-            // We try different initialization strategies to satisfy different SDK versions
-            console.log("[Simnet] Initializing session...");
-            try {
-                // Strategy A: Modern SDKs often expect an empty config object or specific fields
-                await (instance as any).initEmptySession({ enabled: false });
-                console.log("[Simnet] Session initialized with config.");
-            } catch (e) {
-                console.warn("[Simnet] initEmptySession with config failed, trying empty call...", e);
-                try {
-                    // Strategy B: Some versions require NO arguments
-                    await (instance as any).initEmptySession();
-                    console.log("[Simnet] Session initialized (no-args).");
-                } catch (e2) {
-                    console.warn("[Simnet] initEmptySession failed completely, trying initSession fallback...");
-                    // Strategy C: Absolute fallback to project-style init
-                    await (instance as any).initSession(".", "Clarinet.toml");
-                    console.log("[Simnet] Session initialized via project fallback.");
-                }
-            }
-
-            // 4. Configure session properties
-            console.log("[Simnet] Configuring devnet defaults...");
-            (instance as any).deployer = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
-
-            // Set epoch to support modern Clarity (2.5 is very safe, 3.0 is preferred but can panic)
-            try {
-                // We attempt to set a modern epoch. If this fails, we log it but don't crash.
-                // The most common reason for failure is "Session not initialized" which means
-                // all of the above strategies failed.
-                console.log("[Simnet] Setting epoch to 2.5...");
-                (instance as any).setEpoch("2.5");
-                console.log("[Simnet] Epoch 2.5 active.");
-            } catch (e) {
-                console.error("[Simnet] CRITICAL: Failed to set epoch. Context:", e);
-                // If we can't set epoch AND we just "successfully" initialized session,
-                // then something is fundamentally wrong with the WASM state.
-            }
-
-            simnetInstance = instance;
-            console.log("[Simnet] Clarity Simnet is ready.");
-            return instance;
-        } catch (error) {
-            console.error("[Simnet] CRITICAL INITIALIZATION FAILURE:", error);
-            initPromise = null;
-            throw error;
+        if (!isWasmLoaded) {
+            await init(wasmUrl);
+            isWasmLoaded = true;
         }
+        const instance = await initSimnet();
+        simnetInstance = instance;
+        return instance;
     })();
 
     return initPromise;
+}
+
+/**
+ * Resets the Simnet instance, forcing a fresh session on the next call.
+ */
+export function resetSimnet() {
+    simnetInstance = null;
+    initPromise = null;
+    sessionID++;
+    console.log("[Simnet] Instance reset requested.");
+}
+
+/**
+ * Initializes the WASM engine and a fresh Simnet session (Empty Mode).
+ */
+export async function getSimnet(): Promise<Simnet> {
+    const instance = await getRawSimnet();
+
+    // Check if session is already initialized (some versions have a sessionId or similar)
+    // For our usage, we just ensure it's called at least once.
+    if (!(instance as any)._isInitialized) {
+        try {
+            await (instance as any).initEmptySession({ enabled: false });
+            (instance as any)._isInitialized = true;
+
+            // Default configuration
+            (instance as any).deployer = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
+            try {
+                // Use 2.5 or 3.0 for Nakamoto depending on browser SDK support
+                // "2.4", "2.5", "3.0" are typically supported in newer clarinet sdks
+                if (typeof (instance as any).setEpoch === 'function') {
+                    (instance as any).setEpoch("3.4");
+                    console.log("[Simnet] Set epoch to 3.4");
+                }
+            } catch (e) {
+                console.warn("[Simnet] setEpoch failed:", e);
+            }
+        } catch (e) {
+            console.warn("[Simnet] initEmptySession failed (might be already initialized):", e);
+        }
+    }
+
+    return instance;
+}
+
+/**
+ * Initializes a Simnet session with a project structure (Clarinet.toml).
+ * Clears any previous session state if possible.
+ */
+export async function initProjectSession(rootPath: string, configPath: string): Promise<Simnet> {
+    const simnet = await getRawSimnet();
+    try {
+        console.log(`[Simnet] Initializing project session at ${rootPath} with ${configPath}`);
+
+        // Ensure we reset any previous session before project init
+        // Some WASM builds are sensitive to this
+        await (simnet as any).initSession(rootPath, configPath);
+        (simnet as any)._isInitialized = true;
+
+        return simnet;
+    } catch (error) {
+        console.error("[Simnet] Project initialization failed:", error);
+        throw error;
+    }
 }
 
 /**
@@ -131,4 +134,51 @@ export async function runExclusively<T>(task: (simnet: Simnet) => Promise<T> | T
     })();
 
     return nextTask;
+}
+
+/**
+ * Returns the 10 pre-funded accounts from the current simnet instance.
+ */
+export async function getAccounts(): Promise<string[]> {
+    return runExclusively((simnet) => {
+        // Simnet instance has an 'accounts' array of account objects
+        const accounts = (simnet as any).accounts || [];
+        return accounts.map((a: any) => a.address);
+    });
+}
+
+/**
+ * Returns the balance of an account in STX.
+ */
+export async function getAccountBalance(address: string): Promise<string> {
+    return runExclusively((simnet) => {
+        try {
+            // Clarinet SDK returns balance as BigInt (micro-STX)
+            const balance = (simnet as any).getAccountBalance?.(address);
+            if (balance !== undefined && balance !== null) {
+                return (Number(balance) / 1000000).toFixed(2);
+            }
+
+            // Fallback for older or different SDK versions: check the accounts array directly
+            const accounts = (simnet as any).accounts || [];
+            const account = accounts.find((a: any) => a.address === address);
+            if (account && account.balance !== undefined) {
+                return (Number(account.balance) / 1000000).toFixed(2);
+            }
+
+            return "100.00";
+        } catch (e) {
+            console.error("[Simnet] Error fetching balance for", address, e);
+            return "100.00";
+        }
+    });
+}
+
+/**
+ * Mines empty blocks to advance the state of the simulation.
+ */
+export async function mineBlocks(count: number): Promise<void> {
+    return runExclusively((simnet) => {
+        return (simnet as any).mineEmptyBlocks(count);
+    });
 }

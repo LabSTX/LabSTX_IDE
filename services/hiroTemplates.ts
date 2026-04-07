@@ -7,6 +7,7 @@ export interface HiroTemplate {
   repoUrl: string; // e.g. https://github.com/hirosystems/platform-template-fungible-token
   readmeUrl: string; // e.g. https://raw.githubusercontent.com/hirosystems/platform-template-fungible-token/refs/heads/main/README.md
   previewPath?: string; // Main Clarity contract path in the repo
+  type: string;
 }
 
 export const HIRO_TEMPLATES: HiroTemplate[] = [
@@ -16,7 +17,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A standard SIP-010 fungible token template for the Hiro Platform.',
     repoUrl: 'https://github.com/hirosystems/platform-template-fungible-token',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-fungible-token/refs/heads/main/README.md',
-    previewPath: 'contracts/fungible-token.clar'
+    previewPath: 'contracts/fungible-token.clar',
+    type: 'clarity'
   },
   {
     id: 'nft-template',
@@ -24,7 +26,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A standard SIP-009 non-fungible token template for the Hiro Platform.',
     repoUrl: 'https://github.com/hirosystems/platform-template-non-fungible-token',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-non-fungible-token/refs/heads/main/README.md',
-    previewPath: 'contracts/non-fungible-token.clar'
+    previewPath: 'contracts/non-fungible-token.clar',
+    type: 'clarity'
   },
   {
     id: 'sft-template',
@@ -32,7 +35,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A standard SIP-013 semi-fungible token template for the Hiro Platform.',
     repoUrl: 'https://github.com/hirosystems/platform-template-semi-fungible-token',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-semi-fungible-token/refs/heads/main/README.md',
-    previewPath: 'contracts/semi-fungible-token.clar'
+    previewPath: 'contracts/semi-fungible-token.clar',
+    type: 'clarity'
   },
   {
     id: 'hello-world',
@@ -40,7 +44,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A simple "Hello World" smart contract template for the Stacks blockchain.',
     repoUrl: 'https://github.com/hirosystems/platform-template-hello-world',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-hello-world/refs/heads/main/README.md',
-    previewPath: 'contracts/hello-world.clar'
+    previewPath: 'contracts/hello-world.clar',
+    type: 'clarity'
   },
   {
     id: 'counter-template',
@@ -48,7 +53,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A simple counter smart contract demonstrating state management in Clarity.',
     repoUrl: 'https://github.com/hirosystems/platform-template-counter',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-counter/refs/heads/main/README.md',
-    previewPath: 'contracts/counter.clar'
+    previewPath: 'contracts/counter.clar',
+    type: 'clarity'
   },
   {
     id: 'blank-project',
@@ -56,7 +62,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A bare-bones starter project for building Stacks applications.',
     repoUrl: 'https://github.com/hirosystems/platform-template-blank-project',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-blank-project/refs/heads/main/README.md',
-    previewPath: 'contracts/blank-project.clar'
+    previewPath: 'contracts/blank-project.clar',
+    type: 'clarity'
   },
   {
     id: 'btc-tx-enabled-nft',
@@ -64,7 +71,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'An NFT smart contract that enables minting verified by Bitcoin transactions.',
     repoUrl: 'https://github.com/hirosystems/platform-template-btc-tx-enabled-nft',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-btc-tx-enabled-nft/refs/heads/main/README.md',
-    previewPath: 'contracts/btc-tx-enabled-nft.clar'
+    previewPath: 'contracts/btc-tx-enabled-nft.clar',
+    type: 'clarity'
   },
   {
     id: 'clarity-bitcoin',
@@ -72,7 +80,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A template demonstrating how to verify Bitcoin transactions directly within Clarity.',
     repoUrl: 'https://github.com/hirosystems/platform-template-clarity-bitcoin',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-clarity-bitcoin/refs/heads/main/README.md',
-    previewPath: 'contracts/clarity-bitcoin.clar'
+    previewPath: 'contracts/clarity-bitcoin.clar',
+    type: 'clarity'
   },
   {
     id: 'lightning-swaps',
@@ -80,7 +89,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A smart contract template for executing cross-chain Lightning network swaps.',
     repoUrl: 'https://github.com/hirosystems/platform-template-lightning-swaps',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-lightning-swaps/refs/heads/main/README.md',
-    previewPath: 'contracts/lightning-swaps.clar'
+    previewPath: 'contracts/lightning-swaps.clar',
+    type: 'clarity'
   },
   {
     id: 'stx-defi',
@@ -88,7 +98,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A basic decentralized finance smart contract template for depositing and borrowing STX.',
     repoUrl: 'https://github.com/hirosystems/platform-template-stx-defi',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-stx-defi/refs/heads/main/README.md',
-    previewPath: 'contracts/stx-defi.clar'
+    previewPath: 'contracts/stx-defi.clar',
+    type: 'clarity'
   },
   {
     id: 'ordyswap',
@@ -96,7 +107,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A template demonstrating swapping capabilities across Ordinals and Stacks.',
     repoUrl: 'https://github.com/hirosystems/platform-template-ordyswap',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-ordyswap/refs/heads/main/README.md',
-    previewPath: 'contracts/ordyswap.clar'
+    previewPath: 'contracts/ordyswap.clar',
+    type: 'clarity'
   },
   {
     id: 'nft-marketplace',
@@ -104,7 +116,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A foundation for building decentralized NFT marketplaces on Stacks.',
     repoUrl: 'https://github.com/hirosystems/platform-template-nft-marketplace',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-nft-marketplace/refs/heads/main/README.md',
-    previewPath: 'contracts/nft-marketplace.clar'
+    previewPath: 'contracts/nft-marketplace.clar',
+    type: 'clarity'
   },
   {
     id: 'nft-marketplace-dapp',
@@ -112,7 +125,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A full-stack demo of an NFT marketplace allowing users to mint, list, and purchase NFTs using STX.',
     repoUrl: 'https://github.com/hirosystems/platform-template-nft-marketplace-dapp',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-nft-marketplace-dapp/refs/heads/main/README.md',
-    previewPath: 'contracts/nft-marketplace.clar'
+    previewPath: 'contracts/nft-marketplace.clar',
+    type: 'clarity'
   },
   {
     id: 'fundraising-dapp',
@@ -120,7 +134,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A full-stack decentralized application template for managing fundraising campaigns.',
     repoUrl: 'https://github.com/hirosystems/platform-template-fundraising-dapp',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-fundraising-dapp/refs/heads/main/README.md',
-    previewPath: 'contracts/fundraising.clar'
+    previewPath: 'contracts/fundraising.clar',
+    type: 'clarity'
   },
   {
     id: 'stacks-wallet',
@@ -128,7 +143,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A full-stack template comprising a wallet extension, front-end app, and a Clarity contract.',
     repoUrl: 'https://github.com/hirosystems/platform-template-stacks-wallet',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-stacks-wallet/refs/heads/main/README.md',
-    previewPath: 'contracts/stacks-wallet.clar'
+    previewPath: 'contracts/stacks-wallet.clar',
+    type: 'clarity'
   },
   {
     id: 'post-conditions',
@@ -136,7 +152,8 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     description: 'A template showcasing the power of post-conditions through multiple Clarity scenarios.',
     repoUrl: 'https://github.com/hirosystems/platform-template-post-conditions',
     readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-post-conditions/refs/heads/main/README.md',
-    previewPath: 'contracts/post-conditions.clar'
+    previewPath: 'contracts/post-conditions.clar',
+    type: 'clarity'
   }
 ];
 
@@ -170,7 +187,7 @@ export class HiroTemplateService {
    * Fetch repository contents (files and folders)
    * This uses the GitHub API to list files
    */
-  static async fetchRepoContents(repoUrl: string): Promise<Record<string, string>> {
+  static async fetchRepoContents(repoUrl: string, onProgress?: (percent: number) => void): Promise<Record<string, string>> {
     // Extract owner and repo from URL
     const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     if (!match) throw new Error('Invalid repo URL');
@@ -179,14 +196,21 @@ export class HiroTemplateService {
 
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
     const files: Record<string, string> = {};
+    let completedItems = 0;
+    let totalItems = 0;
+
+    if (onProgress) onProgress(0);
 
     const processItem = async (item: any) => {
       if (item.type === 'file') {
         const content = await (await fetch(item.download_url)).text();
         files[item.path] = content;
+        completedItems++;
+        if (onProgress) onProgress(Math.round((completedItems / totalItems) * 100));
       } else if (item.type === 'dir') {
         const dirResponse = await fetch(item.url);
         const dirContents = await dirResponse.json();
+        totalItems += dirContents.length - 1; // Subtract the directory itself
         for (const subItem of dirContents) {
           await processItem(subItem);
         }
@@ -196,6 +220,7 @@ export class HiroTemplateService {
     const response = await fetch(apiUrl);
     if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
     const contents = await response.json();
+    totalItems = contents.length;
 
     for (const item of contents) {
       await processItem(item);

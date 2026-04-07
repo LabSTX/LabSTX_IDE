@@ -7,11 +7,12 @@ import { FileNode } from '../../types';
 import { renderMarkdown } from '../../utils/markdownUtils';
 
 interface NewProjectTabProps {
-    onLoadTemplate: (nodes: FileNode[], templateName?: string) => void;
+    onLoadTemplate: (nodes: FileNode[], templateName?: string, type?: string) => void;
     onCreateBlank: () => void;
     onImport: () => void;
     onClose: () => void;
     theme?: 'dark' | 'light';
+    onProgress?: (percent: number | null) => void;
 }
 
 export const NewProjectTab: React.FC<NewProjectTabProps> = ({
@@ -19,7 +20,8 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
     onCreateBlank,
     onImport,
     onClose,
-    theme = 'dark'
+    theme = 'dark',
+    onProgress
 }) => {
     const [templates, setTemplates] = React.useState<GitHubTemplate[]>([]);
     const [loading, setLoading] = React.useState(true);
@@ -76,14 +78,18 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
     const handleOpenTemplate = async (template: GitHubTemplate) => {
         try {
             setLoadingFilesId(template.id);
-            const files = await GitHubTemplateService.fetchTemplateFiles(template.path);
+            if (onProgress) onProgress(0);
+            const files = await GitHubTemplateService.fetchTemplateFiles(template.path, (p) => {
+                if (onProgress) onProgress(p);
+            });
             const nodes = GitHubTemplateService.templateToFileNodes(files);
-            onLoadTemplate(nodes, template.name);
+            onLoadTemplate(nodes, template.name, template.type);
         } catch (err) {
             console.error('Failed to load template files:', err);
             alert('Failed to load template files. Please try again.');
         } finally {
             setLoadingFilesId(null);
+            if (onProgress) onProgress(null);
         }
     };
 
@@ -120,14 +126,18 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
     const handleHiroOpen = async (template: HiroTemplate) => {
         try {
             setLoadingFilesId(template.id);
-            const files = await HiroTemplateService.fetchRepoContents(template.repoUrl);
+            if (onProgress) onProgress(0);
+            const files = await HiroTemplateService.fetchRepoContents(template.repoUrl, (p) => {
+                if (onProgress) onProgress(p);
+            });
             const nodes = HiroTemplateService.templateToFileNodes(files);
-            onLoadTemplate(nodes, template.name);
+            onLoadTemplate(nodes, template.name, template.type);
         } catch (err) {
             console.error('Failed to load template:', err);
             alert('Failed to load template files. Please try again.');
         } finally {
             setLoadingFilesId(null);
+            if (onProgress) onProgress(null);
         }
     };
 
@@ -145,6 +155,8 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                     <h2 className="text-2xl font-black tracking-widest uppercase ">New Project</h2>
                     <p className="text-caspier-muted text-[10px] mt-2 font-black uppercase tracking-[0.2em]">Select your starting point</p>
                 </div>
+
+                <a href='https://github.com/LabSTX/LabSTX-Workshops/issues' target='_blank' onClick={() => { }}> <button className=" bg-caspier-black hover:underline  hover:text-blue-500 rounded-full text-caspier-muted transition-all text-caspier-muted text-[10px] mt-2 font-black uppercase tracking-[0.2em]" > Request a Template</button></a>
                 <button
                     onClick={onClose}
                     className="p-2 hover:bg-labstx-orange hover:text-white rounded-full text-caspier-muted transition-all border-2 border-transparent hover:border-white/20"
@@ -157,6 +169,31 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
             <div className="flex-1 p-8 overflow-y-auto bg-caspier-dark/50">
                 <div className=" mx-auto">
 
+
+                    {/* Quick Actions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+                        <button
+                            onClick={onCreateBlank}
+                            className="flex flex-col p-6 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all  group text-left h-full hover:shadow-[8px_8px_0_0_rgba(255,107,0,0.2)]"
+                        >
+                            <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                                <PlusIcon className="w-6 h-6 text-labstx-orange" />
+                            </div>
+                            <div className="font-black text-lg mb-2 uppercase tracking-widest">Blank Project</div>
+                            <div className="text-caspier-muted text-xs leading-relaxed font-medium">Start fresh with a clean, empty workspace ready for your Clarity code.</div>
+                        </button>
+
+                        <button
+                            onClick={onImport}
+                            className="flex flex-col p-6 bg-caspier-black/50 border-2 border-caspier-border hover:border-blue-500 transition-all  group text-left h-full hover:shadow-[8px_8px_0_0_rgba(0,123,255,0.2)]"
+                        >
+                            <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                                <UploadIcon className="w-6 h-6 text-blue-500" />
+                            </div>
+                            <div className="font-black text-lg mb-2 uppercase tracking-widest">Import Project</div>
+                            <div className="text-caspier-muted text-xs leading-relaxed font-medium">Import an existing project from a ZIP file and start working immediately.</div>
+                        </button>
+                    </div>
 
                     {/* Templates Section */}
                     <div className='w-full'>
@@ -199,7 +236,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                 {templates.map((template) => (
                                     <div
                                         key={template.id}
-                                        className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all rounded-xl group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
+                                        className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all  group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
                                     >
                                         <div className="flex-1">
                                             <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -231,7 +268,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                                 disabled={loadingFilesId === template.id}
                                                 className="flex items-center justify-center gap-1.5 py-2 px-3 bg-caspier-dark hover:bg-caspier-hover text-caspier-muted hover:text-caspier-white rounded-lg transition-all text-[10px] font-bold uppercase tracking-wider border border-caspier-border disabled:opacity-50"
                                             >
-                                                {loadingFilesId === template.id ? <RefreshIcon className="w-3 h-3 animate-spin" /> : <EyeIcon className="w-3 h-3" />}
+                                                <EyeIcon className="w-3 h-3" />
                                                 <span>Preview</span>
                                             </button>
                                             <button
@@ -258,7 +295,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             {HIRO_TEMPLATES.map((template) => (
                                 <div
                                     key={template.id}
-                                    className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all rounded-xl group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
+                                    className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
                                 >
                                     <div className="flex-1">
                                         <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -290,7 +327,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                             disabled={loadingFilesId === template.id || !template.previewPath}
                                             className="flex items-center justify-center gap-1.5 py-2 px-3 bg-caspier-dark hover:bg-caspier-hover text-caspier-muted hover:text-caspier-white rounded-lg transition-all text-[10px] font-bold uppercase tracking-wider border border-caspier-border disabled:opacity-50"
                                         >
-                                            {loadingFilesId === template.id ? <RefreshIcon className="w-3 h-3 animate-spin" /> : <EyeIcon className="w-3 h-3" />}
+                                            <EyeIcon className="w-3 h-3" />
                                             <span>Preview</span>
                                         </button>
                                         <button
@@ -298,7 +335,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                             disabled={loadingFilesId === template.id}
                                             className="flex items-center justify-center gap-1.5 py-2 px-3 bg-caspier-dark hover:bg-caspier-hover text-caspier-muted hover:text-caspier-white rounded-lg transition-all text-[10px] font-bold uppercase tracking-wider border border-caspier-border disabled:opacity-50"
                                         >
-                                            {loadingFilesId === template.id ? <RefreshIcon className="w-3 h-3 animate-spin" /> : <CodeIcon className="w-3 h-3" />}
+                                            <CodeIcon className="w-3 h-3" />
                                             <span>Details</span>
                                         </button>
                                     </div>

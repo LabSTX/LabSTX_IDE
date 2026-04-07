@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { FileNode, WalletConnection, DeployedContract, ActivityView } from '../../types';
+import { FileNode, WalletConnection, DeployedContract, ActivityView, ProjectSettings, TerminalLine } from '../../types';
 import HomeTab from '../UI/HomeTab';
 import AbiPreviewTab from '../UI/AbiPreviewTab';
 import MarkdownPreviewTab from '../UI/MarkdownPreviewTab';
@@ -8,6 +8,8 @@ import { ContractActivityDetailTab } from './ContractActivityDetailTab';
 import AccountSettingsTab from '../UI/AccountSettingsTab';
 import { NewProjectTab } from '../UI/NewProjectTab';
 import { StatisticsView } from '../Stats/StatisticsView';
+import SimnetTab from '../UI/SimnetTab';
+import { ContractCallTab } from '../UI/ContractCallTab';
 
 
 interface SpecialTabProps {
@@ -17,7 +19,7 @@ interface SpecialTabProps {
     wallet: WalletConnection;
     deployedContracts: DeployedContract[];
     changelogContent: string;
-    onLoadTemplate: (nodes: FileNode[], templateName?: string) => void;
+    onLoadTemplate: (nodes: FileNode[], templateName?: string, type?: string) => void;
     onCloseTab: (id: string) => void;
     onSelectWalkthrough: (id: string) => void;
     onClone: () => void;
@@ -33,6 +35,14 @@ interface SpecialTabProps {
     workspaceNames: string[];
     onQuotaReached?: (reached: boolean) => void;
     onConnectWallet?: () => void;
+    activeSimnetAccount?: string;
+    onSimnetAccountChange?: (address: string) => void;
+    onTemplateProgress?: (percent: number | null) => void;
+    onAddTerminalLine?: (line: Omit<TerminalLine, 'id'>) => void;
+    onOpenStxerDebugger?: (txId?: string) => void;
+    onDiscoveryImport?: (type: any, value: string, network: any) => Promise<void>;
+    onAddActivity?: (activity: any) => void;
+    settings: ProjectSettings;
 }
 
 export const SpecialTab: React.FC<SpecialTabProps> = ({
@@ -57,7 +67,15 @@ export const SpecialTab: React.FC<SpecialTabProps> = ({
     workspaceMetadata,
     workspaceNames,
     onQuotaReached,
-    onConnectWallet
+    onConnectWallet,
+    activeSimnetAccount,
+    onSimnetAccountChange,
+    onTemplateProgress,
+    onAddTerminalLine,
+    onOpenStxerDebugger,
+    onDiscoveryImport,
+    onAddActivity,
+    settings
 }) => {
     if (!activeSpecialId) return null;
 
@@ -116,8 +134,25 @@ export const SpecialTab: React.FC<SpecialTabProps> = ({
     }
 
     if (activeSpecialId.startsWith('@contract-')) {
+        if (activeSpecialId.startsWith('@contract-call-')) {
+            const contractHash = activeSpecialId.replace(/^@contract-call-/, '');
+            return (
+                <ContractCallTab
+                    contractHash={contractHash}
+                    theme={theme}
+                    wallet={wallet}
+                    activeSimnetAccount={activeSimnetAccount}
+                    network={settings.network}
+                    deployedContracts={deployedContracts}
+                    onAddTerminalLine={onAddTerminalLine}
+                    onOpenStxerDebugger={onOpenStxerDebugger}
+                    onImport={onDiscoveryImport}
+                    onAddActivity={onAddActivity}
+                />
+            );
+        }
         const contractId = activeSpecialId.replace(/^@contract-/, '');
-        const contract = deployedContracts.find(c => c.id === contractId);
+        const contract = (deployedContracts || []).find(c => c.id === contractId);
         if (!contract) return <div className="p-8 text-caspier-muted">Contract record not found.</div>;
         return (
             <ContractActivityDetailTab
@@ -148,12 +183,23 @@ export const SpecialTab: React.FC<SpecialTabProps> = ({
                 onImport={onImportWorkspace}
                 onClose={() => onCloseTab('@new-project')}
                 theme={theme}
+                onProgress={onTemplateProgress}
             />
         );
     }
 
     if (activeSpecialId === '@stats') {
         return <StatisticsView />;
+    }
+
+    if (activeSpecialId === '@simnet') {
+        return (
+            <SimnetTab
+                activeAccount={activeSimnetAccount || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM'}
+                onAccountChange={onSimnetAccountChange}
+                theme={theme}
+            />
+        );
     }
 
 

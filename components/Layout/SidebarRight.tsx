@@ -796,9 +796,7 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
                         </div>
                     ) : (
                         <>
-                            {!isAuthenticated ? (
-                                <GitHubLoginRequired theme={theme} onLogin={login} />
-                            ) : isQuotaExceeded ? (
+                            {isQuotaExceeded ? (
                                 <UpgradeRequired onUpgrade={onOpenAccountSettings || (() => { })} />
                             ) : messages.length === 0 ? (
                                 <AssistantEmptyState theme={theme} />
@@ -848,7 +846,7 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
                 </div>
 
                 {/* Input Section */}
-                {isAuthenticated && !isQuotaExceeded && (
+                {!isQuotaExceeded && (
                     <div className="p-4 bg-caspier-black/80 backdrop-blur-md border-t border-caspier-border/50">
                         <div className="relative">
                             {/* Quick Prompts */}

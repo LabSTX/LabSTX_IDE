@@ -23,8 +23,10 @@ interface WorkspaceSelectorProps {
   onDownloadWorkspace: () => void;
   onImportWorkspace: () => void;
   onDeleteWorkspace?: () => void;
+  onClearAllWorkspaces?: () => void;
   onCloneWorkspace?: () => void;
   onSync?: () => void;
+  hasClarinet?: boolean;
 }
 
 const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
@@ -36,8 +38,10 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
   onDownloadWorkspace,
   onImportWorkspace,
   onDeleteWorkspace,
+  onClearAllWorkspaces,
   onCloneWorkspace,
-  onSync
+  onSync,
+  hasClarinet
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -80,7 +84,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className="absolute top-[calc(100%+8px)] left-0 w-80 bg-caspier-black  border border-caspier-border rounded-md shadow-xl  z-[100] overflow-hidden origin-top-left"
+          className="absolute top-[calc(100%+8px)] left-0 right-0 w-80 bg-caspier-black  border border-caspier-border shadow-xl  z-[100] overflow-hidden origin-top-left"
           style={{
             animation: 'dropdownEnter 0.2s ease-out forwards'
           }}
@@ -179,6 +183,19 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
               </button>
             </div>
 
+            {/* Clear All Action */}
+            {onClearAllWorkspaces && (
+              <div className="mb-3 px-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onClearAllWorkspaces(); setIsOpen(false); }}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-red-600/10 border border-red-500/20 text-red-500 hover:bg-red-600 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest"
+                >
+                  <TrashIcon className="w-3.5 h-3.5" />
+                  Clear All Workspaces
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -192,13 +209,15 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
 
                 GitHub Clone
               </button>
-              <button
-                onClick={() => { onSync?.(); setIsOpen(false); }}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-caspier-active/10 border border-caspier-active text-caspier-active hover:bg-caspier-active/20 hover:border-caspier-active/40 transition-all text-xs font-bold shadow-[0_0_15px_rgba(0,123,255,0.1)]"
-              >
-                <RefreshIcon className="w-4 h-4" />
-                Sync Work
-              </button>
+              {hasClarinet && (
+                <button
+                  onClick={() => { onSync?.(); setIsOpen(false); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-caspier-active/10 border border-caspier-active text-caspier-active hover:bg-caspier-active/20 hover:border-caspier-active/40 transition-all text-xs font-bold shadow-[0_0_15px_rgba(0,123,255,0.1)]"
+                >
+                  <RefreshIcon className="w-4 h-4" />
+                  Sync Work
+                </button>
+              )}
             </div>
           </div>
         </div>

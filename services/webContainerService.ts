@@ -56,6 +56,18 @@ class WebContainerService {
         if (!this.webcontainerInstance) return;
         await this.webcontainerInstance.fs.writeFile(path, contents);
     }
+
+    public async clearFileSystem() {
+        if (!this.webcontainerInstance) return;
+        try {
+            const items = await this.webcontainerInstance.fs.readdir('/');
+            for (const item of items) {
+                await this.webcontainerInstance.fs.rm(item, { recursive: true });
+            }
+        } catch (err) {
+            console.error('[WebContainer] Failed to clear filesystem:', err);
+        }
+    }
 }
 
 export const webContainerService = WebContainerService.getInstance();

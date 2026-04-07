@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
-import { BugIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon } from '../UI/Icons';
+import React, { useState, useEffect, useRef } from 'react';
+import { BugIcon, SunIcon, MoonIcon, LayoutSidebarLeftIcon, LayoutSidebarRightIcon, LayoutPanelBottomIcon, BellIcon, WifiIcon, WifiOffIcon } from '../UI/Icons';
 import WorkspaceSelector from './WorkspaceSelector';
 import { GitHubAuth } from '../GitHub/GitHubAuth';
 import { PublicCloneModal } from '../GitHub/PublicCloneModal';
 import { BugReportModal } from '../UI/BugReportModal';
+import NotificationPopover from '../UI/NotificationPopover';
 
 interface HeaderProps {
   currentWorkspace: string;
@@ -15,6 +16,7 @@ interface HeaderProps {
   onDownloadWorkspace: () => void;
   onImportWorkspace: () => void;
   onDeleteWorkspace?: () => void;
+  onClearAllWorkspaces?: () => void;
   onCloneWorkspace?: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
@@ -28,6 +30,7 @@ interface HeaderProps {
   onGitHubGistCreated?: (url: string) => void;
   workspaceFiles?: Record<string, string>;
   onSync?: () => void;
+  hasClarinet?: boolean;
   aiStats: { aiInteractions: number; aiQuotaLimit: number } | null;
   onOpenAccountSettings: () => void;
 }
@@ -41,6 +44,7 @@ const Header: React.FC<HeaderProps> = ({
   onDownloadWorkspace,
   onImportWorkspace,
   onDeleteWorkspace,
+  onClearAllWorkspaces,
   onCloneWorkspace,
   theme,
   toggleTheme,
@@ -54,10 +58,53 @@ const Header: React.FC<HeaderProps> = ({
   onGitHubGistCreated,
   workspaceFiles,
   onSync,
+  hasClarinet,
   aiStats,
   onOpenAccountSettings
 }) => {
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState<'connected' | 'connecting' | 'offline'>(
+    navigator.onLine ? 'connected' : 'offline'
+  );
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationsAnchorRect, setNotificationsAnchorRect] = useState<DOMRect | null>(null);
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
+  const [notifications, setNotifications] = useState([
+    {
+      id: '1',
+      title: 'Welcome to LabSTX',
+      message: 'Start building your Clarity smart contracts today!',
+      type: 'info' as const,
+      timestamp: new Date(),
+      read: false
+    },
+    {
+      id: '2',
+      title: 'Simnet Ready',
+      message: 'Your local testing environment is initialized.',
+      type: 'success' as const,
+      timestamp: new Date(Date.now() - 3600000),
+      read: true
+    }
+  ]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setNetworkStatus('connecting');
+      setTimeout(() => setNetworkStatus('connected'), 2000);
+    };
+    const handleOffline = () => setNetworkStatus('offline');
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const aiUsedPercent = aiStats ? Math.min(100, Math.round((aiStats.aiInteractions / aiStats.aiQuotaLimit) * 100)) : 0;
 
@@ -69,15 +116,19 @@ const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center font-black gap-x-2">
           {theme === 'dark' ? (
             <img
-              src="/lab_stx_dark.png"
+              src="/lab_stx.png"
               alt="stacks"
-              className="block object-contain w-[20px]"
+              width={28}
+              height={28}
+              className="block object-contain invert brightness-0 invert-[1]"
             />
           ) : (
             <img
               src="/lab_stx.png"
               alt="stacks"
-              className="block object-contain w-[30px]"
+              width={28}
+              height={28}
+              className="block object-contain "
             />
           )}
           LabSTX
@@ -87,6 +138,36 @@ const Header: React.FC<HeaderProps> = ({
 
         {/* Separator */}
         <div className="h-4 w-[1px] bg-caspier-border"></div>
+        {/* Network Status */}
+        <div className="flex items-center gap-2 px-3 py-1">
+          <div className={`relative flex items-center justify-center`}>
+            {networkStatus === 'connected' && (
+              <>
+                <div className="absolute w-2 h-2 bg-emerald-500 rounded-full animate-ping opacity-40" />
+                <div className="relative w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              </>
+            )}
+            {networkStatus === 'connecting' && (
+              <>
+                <div className="absolute w-2 h-2 bg-amber-500 rounded-full animate-ping opacity-40" />
+                <div className="relative w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+              </>
+            )}
+            {networkStatus === 'offline' && (
+              <div className="relative w-1.5 h-1.5 bg-red-500 rounded-full opacity-60" />
+            )}
+          </div>
+          <span className={`text-[10px] font-black uppercase tracking-widest ${networkStatus === 'connected' ? 'text-emerald-500' :
+            networkStatus === 'connecting' ? 'text-amber-500' : 'text-red-500'
+            }`}>
+            {networkStatus}
+          </span>
+        </div>
+
+
+      </div>
+
+      <div className="flex items-center gap-4">
 
         <WorkspaceSelector
           currentWorkspace={currentWorkspace}
@@ -97,28 +178,23 @@ const Header: React.FC<HeaderProps> = ({
           onDownloadWorkspace={onDownloadWorkspace}
           onImportWorkspace={onImportWorkspace}
           onDeleteWorkspace={onDeleteWorkspace}
+          onClearAllWorkspaces={onClearAllWorkspaces}
           onCloneWorkspace={onCloneWorkspace}
           onSync={onSync}
+          hasClarinet={hasClarinet}
         />
-      </div>
-
-      <div className="flex items-center gap-4">
-        {/* AI Credits Display */}
-
-        <div className="flex items-center gap-2">
-          <div className='flex items-center gap-x-1.5 text-emerald-500 bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-2 py-1 text-[10px] font-black tracking-widest uppercase'>
-            <div className="w-1 h-1 rounded-full bg-emerald-500" />
-            BETA
-          </div>
-          <button
-            onClick={() => setIsBugModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 rounded transition-all duration-200 group"
-            title="Report a bug or share feedback"
-          >
-            <BugIcon className="w-3 h-3 text-red-500 group-hover:animate-pulse" />
-            Report Bug
-          </button>
+        <div className='hidden flex items-center gap-x-1.5 text-emerald-500 bg-emerald-500/5 border border-emerald-500/10  px-2 py-1 text-[10px] font-black tracking-widest uppercase'>
+          <div className="w-1 h-1  bg-emerald-500" />
+          BETA
         </div>
+        <button
+          onClick={() => setIsBugModalOpen(true)}
+          className="hidden flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20  transition-all duration-200 group"
+          title="Report a bug or share feedback"
+        >
+          <BugIcon className="w-3 h-3 text-red-500 group-hover:animate-pulse" />
+          Report Bug
+        </button>
       </div>
 
       {/* Right Side Controls */}
@@ -145,6 +221,26 @@ const Header: React.FC<HeaderProps> = ({
             title="Toggle Right Sidebar"
           >
             <LayoutSidebarRightIcon className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Notifications */}
+        <div className="relative">
+          <button
+            ref={notificationsButtonRef}
+            onClick={() => {
+              setNotificationsAnchorRect(notificationsButtonRef.current?.getBoundingClientRect() || null);
+              setIsNotificationsOpen(!isNotificationsOpen);
+            }}
+            className={`p-1.5 rounded-full hover:bg-caspier-hover transition-all relative group ${isNotificationsOpen ? 'bg-caspier-hover text-labstx-orange' : 'text-caspier-text'}`}
+            title="Notifications"
+          >
+            <BellIcon className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-labstx-orange text-[8px] font-black text-white flex items-center justify-center rounded-full border-2 border-caspier-black group-hover:scale-110 transition-transform">
+                {unreadCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -187,6 +283,14 @@ const Header: React.FC<HeaderProps> = ({
         isOpen={isBugModalOpen}
         onClose={() => setIsBugModalOpen(false)}
         theme={theme}
+      />
+      <NotificationPopover
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        anchorRect={notificationsAnchorRect}
+        notifications={notifications}
+        onMarkAllRead={() => setNotifications(notifications.map(n => ({ ...n, read: true })))}
+        onClearAll={() => setNotifications([])}
       />
     </div >
   );

@@ -1,4 +1,5 @@
-import { showConnect, authenticate } from '@stacks/connect';
+import { request as stacksRequest } from '@stacks/connect';
+import { request as satsRequest, AddressPurpose } from 'sats-connect';
 import { STACKS_TESTNET, STACKS_MAINNET } from '@stacks/network';
 import { WalletConnection } from '../../types';
 
@@ -11,61 +12,114 @@ export class StacksWalletService {
         icon: window.location.origin + '/logo.svg',
     };
 
-    static async connect(networkType: string = 'testnet'): Promise<WalletConnection> {
-        return new Promise((resolve, reject) => {
-            authenticate({
-                appDetails: this.appDetails,
-                onFinish: (data) => {
-                    const userData = data.userSession.loadUserData();
+    static async connect(networkType: string = 'testnet', preferredProvider?: 'leather' | 'xverse'): Promise<WalletConnection> {
+        const win = window as any;
 
-                    // Detect provider
-                    let type: 'hiro' | 'leather' | 'xverse' | 'none' = 'leather';
-                    const win = window as any;
-
-                    if (win.XverseProviders || win.BitcoinProvider?.isXverse) {
-                        type = 'xverse';
-                    } else if (win.HiroWalletProvider || win.StacksProvider?.isHiro) {
-                        type = 'hiro';
-                    } else if (win.LeatherProvider || win.StacksProvider?.isLeather) {
-                        type = 'leather';
-                    }
-
-                    // Robust address extraction
-                    const profile = userData.profile || {};
-                    const stxAddresses = profile.stxAddress || {};
-
-                    const mainnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.mainnet;
-                    const testnetAddr = typeof stxAddresses === 'string' ? stxAddresses : stxAddresses.testnet;
-
-                    // Network Validation: Ensure the wallet provides the address for the requested network
-                    if (networkType === 'mainnet' && (!mainnetAddr || !mainnetAddr.startsWith('SP'))) {
-                        reject(new Error('Connection Failed: Mainnet address not found. Please switch your wallet to Mainnet.'));
-                        return;
-                    }
-                    if (networkType === 'testnet' && (!testnetAddr || !testnetAddr.startsWith('ST'))) {
-                        reject(new Error('Connection Failed: Testnet address not found. Please switch your wallet to Testnet.'));
-                        return;
-                    }
-
-                    // Final address to use for this connection (strict matching)
-                    const address = networkType === 'mainnet' ? mainnetAddr : testnetAddr;
-
-                    resolve({
-                        type,
-                        connected: true,
-                        address: address,
-                        publicKey: userData.appPrivateKey,
-                        network: networkType,
-                        addresses: {
-                            mainnet: mainnetAddr || address,
-                            testnet: testnetAddr || address
-                        }
+        // --- XVERSE DIRECT PATH (Sats Connect) ---
+        // This bypasses @stacks/connect to avoid the "redefine property" console error
+        // --- XVERSE DIRECT PATH (Sats Connect) ---
+        if (preferredProvider === 'xverse') {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    // Using sats-connect 'wallet_connect' for the most direct link
+                    const response = await satsRequest('wallet_connect', {
+                        addresses: [AddressPurpose.Stacks],
+                        message: `Connect to ${this.appDetails.name}`,
                     });
-                },
-                onCancel: () => {
-                    reject(new Error('User cancelled login'));
+
+                    if (response.status === 'success') {
+                        const stacksAddrItem = response.result.addresses.find(a => a.purpose === AddressPurpose.Stacks);
+                        console.log(stacksAddrItem);
+                        console.log(networkType);
+
+                        if (!stacksAddrItem) {
+                            reject(new Error('No Stacks address returned.'));
+                            return;
+                        }
+                        if (stacksAddrItem.address.startsWith('ST') && networkType === 'testnet') {
+                            resolve({
+                                type: 'xverse',
+                                connected: true,
+                                address: stacksAddrItem.address,
+                                publicKey: stacksAddrItem.publicKey,
+                                network: networkType as any,
+                                addresses: {
+                                    mainnet: stacksAddrItem.address,
+                                    testnet: stacksAddrItem.address
+                                }
+                            });
+                        } else if (stacksAddrItem.address.startsWith('SP') && networkType === 'mainnet') {
+                            resolve({
+                                type: 'xverse',
+                                connected: true,
+                                address: stacksAddrItem.address,
+                                publicKey: stacksAddrItem.publicKey,
+                                network: networkType as any,
+                                addresses: {
+                                    mainnet: stacksAddrItem.address,
+                                    testnet: stacksAddrItem.address
+                                }
+                            });
+                        } else {
+                            reject(new Error('Please connect to the selected network on your Wallet Extension'));
+                            return;
+                        }
+                    } else {
+                        reject(new Error(response.error.message || 'Xverse connection failed'));
+                    }
+                } catch (err: any) {
+                    reject(new Error('User cancelled Xverse login'));
                 }
             });
+        }
+
+        // --- LEATHER DIRECT PATH (@stacks/connect request) ---
+        if (preferredProvider === 'leather') {
+            return new Promise(async (resolve, reject) => {
+                const provider = win.LeatherProvider || win.StacksProvider;
+
+                if (!provider) {
+                    reject(new Error("Leather wallet not found."));
+                    return;
+                }
+
+                try {
+                    // 3-argument version skips the selection modal
+                    const response = await stacksRequest(
+                        { provider },
+                        'getAddresses',
+                        { network: networkType as any }
+                    );
+
+                    const stacksAddr = response.addresses.find(a => a.symbol === 'STX');
+
+                    if (!stacksAddr) {
+                        reject(new Error("No Stacks address found."));
+                        return;
+                    }
+
+                    resolve({
+                        type: 'leather',
+                        connected: true,
+                        address: stacksAddr.address,
+                        publicKey: stacksAddr.publicKey,
+                        network: networkType as any,
+                        addresses: {
+                            mainnet: stacksAddr.address,
+                            testnet: stacksAddr.address
+                        }
+                    });
+                } catch (err: any) {
+                    reject(new Error("Connection cancelled."));
+                }
+            });
+        }
+
+        // --- FALLBACK (Standard authenticate if no preferred provider) ---
+        // This handles cases where you might still want the default popup
+        return new Promise((resolve, reject) => {
+            // ... your original authenticate logic here if needed
+            reject(new Error("Please select a specific wallet (Leather or Xverse)."));
         });
     }
 
@@ -135,15 +189,21 @@ export class StacksWalletService {
 
     static async requestTestnetTokens(address: string): Promise<any> {
         try {
-            const response = await fetch('https://api.testnet.hiro.so/extended/v1/faucets/stx', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address, stacking: false })
+            // Parameters moved to the URL
+            const baseUrl = 'https://api.testnet.hiro.so/extended/v1/faucets/stx';
+            const url = `${baseUrl}?address=${encodeURIComponent(address)}&stacking=false`;
+
+            const response = await fetch(url, {
+                method: 'POST', // Keep as POST
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Length': '0' // Explicitly set length to 0 since body is empty
+                }
             });
-            
+
             const data = await response.json();
             console.log(`[FaucetAPI] Status: ${response.status}`, data);
-            
+
             if (!response.ok) {
                 return {
                     success: false,
@@ -151,7 +211,7 @@ export class StacksWalletService {
                     details: data
                 };
             }
-            
+
             return {
                 success: true,
                 ...data

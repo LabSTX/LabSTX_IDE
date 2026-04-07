@@ -24,6 +24,7 @@ import {
     DownloadIcon
 } from './Icons';
 import { ActivityView } from '../../types';
+import { CircleQuestionMark } from 'lucide-react';
 
 interface HomeTabProps {
     onCreateFile: () => void;
@@ -183,11 +184,11 @@ const HomeTab: React.FC<HomeTabProps> = ({
                 <div className='flex' />
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => onSelectView(ActivityView.LEARN_STX)}
-                        className={`flex items-center gap-2 px-4 py-2 ${isLight ? 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700' : 'bg-[#232730] hover:bg-[#2A2F3A] border-slate-700 text-slate-200'} border rounded-full text-sm font-medium transition-colors`}
+                        onClick={() => onSelectView(ActivityView.HELP_WALKTHROUGH)}
+                        className={` flex items-center gap-2 px-4 py-2 ${isLight ? 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700' : 'bg-[#232730] hover:bg-[#2A2F3A] border-slate-700 text-slate-200'} border rounded-full text-sm font-medium transition-colors`}
                     >
-                        <FileTextIcon className="w-4 h-4 text-blue-500" />
-                        Start Learning
+                        <CircleQuestionMark className="w-4 h-4 text-blue-500" />
+                        Walkthroughs
                     </button>
                     <button
                         onClick={onCreateWorkspace}
@@ -233,12 +234,12 @@ const HomeTab: React.FC<HomeTabProps> = ({
                                 </p>
 
                                 <div className="flex gap-1 mb-8">
-                                    <IconButton icon={YoutubeIcon} title="YouTube" />
-                                    <IconButton icon={TwitterIcon} title="Twitter" />
-                                    <IconButton icon={LinkedinIcon} title="LinkedIn" />
-                                    <IconButton icon={GitHubIcon} title="GitHub" />
 
-                                    <IconButton icon={MessageSquareIcon} title="Discord" />
+                                    <IconButton icon={TwitterIcon} title="Twitter" onClick={() => window.open('https://twitter.com/stackslaborg', '_blank')} />
+
+                                    <IconButton icon={GitHubIcon} title="GitHub" onClick={() => window.open('https://github.com/labstx', '_blank')} />
+
+                                    <IconButton icon={MessageSquareIcon} title="Discord" onClick={() => window.open('https://discord.gg/xpTRKeBDA3', '_blank')} />
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3 mb-6">

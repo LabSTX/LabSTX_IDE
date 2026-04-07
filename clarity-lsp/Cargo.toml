@@ -1,0 +1,65 @@
+[package]
+name = "clarity-lsp"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+clarity = { workspace = true, default-features = false, features = ["developer-mode"] }
+clarity-types = { workspace = true, features = ["developer-mode"] }
+ls-types = "0.0.3"
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+clarinet-defaults = { workspace = true }
+clarinet-format = { path = "../clarinet-format" }
+clarinet-files = { path = "../clarinet-files" }
+clarity-repl = { path = "../clarity-repl", default-features = false }
+clarinet-deployments = { path = "../clarinet-deployments" }
+clarity-static-cost = { path = "../clarity-static-cost" }
+
+[dev-dependencies]
+indoc = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+clarity = { workspace = true, default-features = false, features = ["wasm-web", "developer-mode"] }
+clarity-types = { workspace = true, features = ["wasm-web", "developer-mode"] }
+console_error_panic_hook = { workspace = true }
+js-sys = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = ["console"] }
+clarity-repl = { path = "../clarity-repl", default-features = false, features = ["web"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "clarity_lsp"
+path = "src/lib.rs"
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = ['-O1']
+
+[package.metadata.wasm-pack.profile.dev.wasm-bindgen]
+debug-js-glue = true
+demangle-name-section = true
+dwarf-debug-info = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = ['-O']
+
+[package.metadata.wasm-pack.profile.profiling.wasm-bindgen]
+debug-js-glue = false
+demangle-name-section = true
+dwarf-debug-info = false
+
+[package.metadata.wasm-pack.profile.release]
+# -04  aggressively optimizes for speed
+wasm-opt = ['-O4']
+# -0z aggressively optimizes for size
+# wasm-opt = ['-Oz']
+
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+debug-js-glue = false
+demangle-name-section = true
+dwarf-debug-info = false
