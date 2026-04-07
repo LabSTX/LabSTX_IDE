@@ -14,6 +14,7 @@ const providers = getProviders();
 // 1. Find the Xverse provider info from the array you saw in the console
 const isXverseInstalled = providers.find(p => p.id === 'XverseProviders.BitcoinProvider');
 const isLeatherInstalled = providers.find(p => p.id === 'LeatherProvider');
+console.log(providers)
 
 interface WalletConnectionProps {
   wallet: WalletConnection;
