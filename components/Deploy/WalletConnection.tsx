@@ -24,6 +24,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   const [copied, setCopied] = useState(false);
 
   // --- New State for Wallet Detection ---
+  const [isMounted, setisMounted] = useState(false)
   const [isXverseInstalled, setIsXverseInstalled] = useState(false);
   const [isLeatherInstalled, setIsLeatherInstalled] = useState(false);
   const lastUsedProvider = localStorage.getItem('lastUsedProvider');
@@ -33,18 +34,17 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
       try {
         const providers = getProviders();
         console.log("Detected Providers:", providers);
-
-        setIsXverseInstalled(!!providers.find(p => p.id === 'XverseProviders.BitcoinProvider'));
-        setIsLeatherInstalled(!!providers.find(p => p.id === 'LeatherProvider'));
-
+        if (providers) {
+          setIsXverseInstalled(!!providers.find(p => p.id === 'XverseProviders.BitcoinProvider'));
+          setIsLeatherInstalled(!!providers.find(p => p.id === 'LeatherProvider'));
+        }
       } catch (e) {
         console.error("Error detecting providers", e);
       }
     };
 
     checkProviders();
-  }, []); // Runs once on mount
-  // --------------------------------------
+  }, [getProviders]);
 
   const handleConnect = async (provider: 'leather' | 'xverse') => {
     setConnecting(true);

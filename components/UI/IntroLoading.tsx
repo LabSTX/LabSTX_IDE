@@ -205,7 +205,7 @@ const MotionAppContent: React.FC<MotionAppContentProps> = ({ onComplete, theme =
               {status}
             </span>
             <span className={`text-[10px] ${isDark ? 'text-caspier-muted' : 'text-gray-400'} font-mono opacity-50`}>
-              v1.2.0
+              v1.2.1
             </span>
           </div>
           <div className={`h-[2px] w-full ${isDark ? 'bg-white/10' : 'bg-black/5'} rounded-full overflow-hidden`}>
