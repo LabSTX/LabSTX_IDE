@@ -53,7 +53,8 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
     // ── Contract Activity Detial tabs (@contract-{id})
     if (id.startsWith('@contract-')) {
       if (id.startsWith('@contract-call-')) {
-        return { name: 'Contract Call', type: 'file', isContractCall: true };
+        return { name: 'Contract Call -> ' + id.replace(/^@contract-call-/, ''), type: 'file', isContractCall: true };
+        console.log('Contract Call -> ' + id.replace(/^@contract-call-/, ''));
       }
       return { name: 'Contract Detail', type: 'file' };
     }
@@ -223,17 +224,17 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
             <span className={`truncate flex-1 ${isModified || isDirty ? 'font-medium italic text-caspier-text/80' : ''}`}>
               {file.isContractCall ? (
                 <span className="flex items-center gap-1">
-                  <span className="truncate">{file.name}</span>
+                  <span className="truncate" onMouseEnter={(e) => e.currentTarget.style.overflow = 'visible'} onMouseLeave={(e) => e.currentTarget.style.overflow = 'hidden'}>{file.name}</span>
                 </span>
               ) : file.isAbi ? (
                 <span className="flex items-center gap-1">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-labstx-orange/70 bg-labstx-orange/10 border border-caspier-border px-1 rounded">ABI</span>
-                  <span className="truncate">{file.srcName}</span>
+                  <span className="truncate" onMouseEnter={(e) => e.currentTarget.style.overflow = 'visible'} onMouseLeave={(e) => e.currentTarget.style.overflow = 'hidden'}>{file.srcName}</span>
                 </span>
               ) : file.isMd ? (
                 <span className="flex items-center gap-1">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-blue-400/80 bg-blue-400/10 border border-blue-400/20 px-1 rounded">MD</span>
-                  <span className="truncate">{file.srcName}</span>
+                  <span className="truncate" onMouseEnter={(e) => e.currentTarget.style.overflow = 'visible'} onMouseLeave={(e) => e.currentTarget.style.overflow = 'hidden'}>{file.srcName}</span>
                 </span>
               ) : file.name}
             </span>

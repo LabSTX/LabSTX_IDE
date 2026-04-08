@@ -10,7 +10,7 @@ import {
 } from '@stacks/transactions';
 import { bytesToHex, hexToBytes } from '@stacks/common';
 import { STACKS_MAINNET, STACKS_TESTNET, STACKS_MOCKNET } from '@stacks/network';
-import { PlusIcon, Variable, VariableIcon } from 'lucide-react';
+import { PlusIcon, RefreshCcw, Variable, VariableIcon } from 'lucide-react';
 import { getProviders } from 'sats-connect';
 import { openContractCall, request } from '@stacks/connect';
 import { DEFAULT_SETTINGS } from '@/constants';
@@ -149,24 +149,31 @@ export const ContractCallTab: React.FC<ContractCallTabProps> = ({
 
   const isSimnet = network === 'simnet';
 
+
+  const lastContractRef = React.useRef<string>(contractHash);
+
   useEffect(() => {
     const fetchAbi = async () => {
       if (!contractAddress || !contractName) return;
 
-      // Reset interaction states when contract changes
-      setEntryPoint('');
-      setFunctionArgs({});
-      setQueryValue(null);
-      setRawQueryResult(null);
-      setCallValue(null);
-      setRawCallResult(null);
-      setCallError(null);
-      setTxResult(null);
-      setFetchingTxResult(false);
-      setLastTxId(null);
+      // ✅ ONLY reset if the contract ID actually changed
+      if (lastContractRef.current !== contractHash) {
+        setEntryPoint('');
+        setFunctionArgs({});
+        setQueryValue(null);
+        setRawQueryResult(null);
+        setCallValue(null);
+        setRawCallResult(null);
+        setCallError(null);
+        setTxResult(null);
+        setFetchingTxResult(false);
+        setLastTxId(null);
+        setArgumentsJson('{}');
+        setShowJsonInput(false);
 
-      setArgumentsJson('{}');
-      setShowJsonInput(false);
+        // Update the ref to the new hash
+        lastContractRef.current = contractHash;
+      }
 
       setLoading(true);
       setError(null);
@@ -780,7 +787,7 @@ export const ContractCallTab: React.FC<ContractCallTabProps> = ({
   };
 
   if (loading) {
-    return <div className="p-8 text-caspier-muted font-mono flex items-center justify-center">Loading ABI for {contractHash}...</div>;
+    return <div className="p-8 text-caspier-muted font-mono flex h-full w-full items-center justify-center"><RefreshCcw className="animate-spin" size={24} /></div>;
   }
 
   if (error) {
