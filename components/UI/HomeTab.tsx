@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     PlusIcon,
     UploadIcon,
@@ -133,6 +133,15 @@ const FeatureCard: React.FC<FeatureCardProps & { theme: 'dark' | 'light' }> = ({
     );
 };
 
+
+// Create a mapping object to convert JSON string names to React components
+const ICON_MAP: Record<string, React.ElementType> = {
+    'BotIcon': BotIcon,
+    'CodeIcon': CodeIcon,
+    'RocketIcon': RocketIcon,
+    // Add any other potential icons from the JSON here
+};
+
 const HomeTab: React.FC<HomeTabProps> = ({
     onCreateFile,
     onCreateFolder,
@@ -148,34 +157,37 @@ const HomeTab: React.FC<HomeTabProps> = ({
     workspaceNames
 }) => {
     const isLight = theme === 'light';
-    const CARDS_DATA: FeatureCardProps[] = [
-        {
-            badge: 'v1.5.0 Release',
-            title: 'AI Smart Contracts',
-            description: 'Generate, audit and document Clarity contracts using our integrated Stacks-trained AI assistant.',
-            bullets: ['Auto-completion for Clarity', 'Natural Language to Code', 'Logical Error Detection'],
-            buttonText: 'Try AI Assistant',
-            icon: BotIcon
-        },
-        {
-            badge: 'Templates',
-            title: 'Starter Templates',
-            description: 'Explore curated templates for various use-cases and get started quickly.',
-            bullets: ['NFTs', 'DeFi', 'DAOs', 'Tooling'],
-            buttonText: 'Check out',
-            icon: CodeIcon
-        },
-        {
-            badge: 'Mainnet Ready',
-            title: 'One-Click Deploy',
-            description: 'Seamlessly deploy your contracts toTestnet or Mainnet with built-in wallet integration.',
-            bullets: ['Multi-wallet Support', 'Custom fee', 'Custom Nonce'],
-            buttonText: 'Explore Deployment',
-            icon: RocketIcon
-        }
-    ];
 
+    // State to hold the fetched card data
+    const [cardsData, setCardsData] = useState<FeatureCardProps[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
+    // Fetch the data on component mount
+    useEffect(() => {
+        const fetchFeatures = async () => {
+            try {
+                const response = await fetch('https://raw.githubusercontent.com/LabSTX/LabSTX_IDE/refs/heads/main/features.json');
+                if (!response.ok) throw new Error('Failed to fetch features');
+
+                const data = await response.json();
+
+                // Map the string icon names from JSON to the actual React components
+                const mappedData = data.map((item: any) => ({
+                    ...item,
+                    icon: ICON_MAP[item.icon] || BotIcon // Fallback to BotIcon if not found
+                }));
+
+                setCardsData(mappedData);
+            } catch (error) {
+                console.error("Error loading features:", error);
+                // Optionally handle error state here
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchFeatures();
+    }, []);
 
     return (
         <div className={`flex flex-col h-full ${isLight ? 'bg-slate-50 text-slate-800' : 'bg-grey-800 text-slate-200'} overflow-y-auto selection:bg-blue-500/30`}>
@@ -208,8 +220,6 @@ const HomeTab: React.FC<HomeTabProps> = ({
                         <div className={`relative overflow-hidden ${isLight ? 'bg-white border-slate-200 ' : 'bg-caspier-black border-slate-800'} border p-10`}>
                             <div className={`absolute top-0 right-0 w-96 h-96 ${isLight ? 'bg-blue-500/10' : 'bg-blue-600/10'} rounded-full blur-[100px] -z-10`} />
                             <div className={`absolute -bottom-24 -left-24 w-64 h-64 ${isLight ? 'bg-emerald-500/10' : 'bg-emerald-600/5'} rounded-full blur-[80px] -z-10`} />
-                            {/* main card */}
-
 
                             <div className="relative z-10 flex-grow">
                                 <div className="flex items-center gap-3 mb-4">
@@ -234,11 +244,8 @@ const HomeTab: React.FC<HomeTabProps> = ({
                                 </p>
 
                                 <div className="flex gap-1 mb-8">
-
                                     <IconButton icon={TwitterIcon} title="Twitter" onClick={() => window.open('https://twitter.com/stackslaborg', '_blank')} />
-
                                     <IconButton icon={GitHubIcon} title="GitHub" onClick={() => window.open('https://github.com/labstx', '_blank')} />
-
                                     <IconButton icon={MessageSquareIcon} title="Discord" onClick={() => window.open('https://discord.gg/xpTRKeBDA3', '_blank')} />
                                 </div>
 
@@ -291,7 +298,6 @@ const HomeTab: React.FC<HomeTabProps> = ({
                                             className={`py-2.5 px-4 ${isLight ? 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200' : 'bg-[#232730] hover:bg-[#2A2F3A] text-slate-400 hover:text-white border-slate-700'} border rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2`}
                                         >
                                             <GitHubIcon className="w-[18px] h-[18px]" />
-
                                             Clone Repo
                                         </button>
                                     </div>
@@ -330,9 +336,17 @@ const HomeTab: React.FC<HomeTabProps> = ({
 
                     {/* Right Column - Features */}
                     <div className="lg:col-span-6 flex flex-col gap-6">
-                        {CARDS_DATA.map((card, i) => (
-                            <FeatureCard key={i} {...card} theme={theme} />
-                        ))}
+                        {isLoading ? (
+                            <div className={`p-10 border ${isLight ? 'border-slate-200' : 'border-slate-800'} animate-pulse flex flex-col gap-4`}>
+                                <div className={`h-6 w-32 ${isLight ? 'bg-slate-200' : 'bg-slate-700'} rounded`} />
+                                <div className={`h-4 w-full ${isLight ? 'bg-slate-200' : 'bg-slate-700'} rounded`} />
+                                <div className={`h-4 w-2/3 ${isLight ? 'bg-slate-200' : 'bg-slate-700'} rounded`} />
+                            </div>
+                        ) : (
+                            cardsData.map((card, i) => (
+                                <FeatureCard key={i} {...card} theme={theme} />
+                            ))
+                        )}
                     </div>
                 </div>
             </main>
@@ -342,5 +356,4 @@ const HomeTab: React.FC<HomeTabProps> = ({
         </div>
     );
 };
-
 export default HomeTab;
