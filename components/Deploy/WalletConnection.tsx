@@ -30,6 +30,11 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   const lastUsedProvider = localStorage.getItem('lastUsedProvider');
 
   useEffect(() => {
+    setTimeout(() => {
+      setisMounted(true)
+    }, 1000)
+  }, [])
+  useEffect(() => {
     const checkProviders = () => {
       try {
         const providers = getProviders();
@@ -44,7 +49,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
     };
 
     checkProviders();
-  }, [getProviders]);
+  }, [isMounted]);
 
   const handleConnect = async (provider: 'leather' | 'xverse') => {
     setConnecting(true);
