@@ -24,32 +24,43 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   const [copied, setCopied] = useState(false);
 
   // --- New State for Wallet Detection ---
-  const [isMounted, setisMounted] = useState(false)
+  const [isMounted, setIsMounted] = useState(false);
   const [isXverseInstalled, setIsXverseInstalled] = useState(false);
   const [isLeatherInstalled, setIsLeatherInstalled] = useState(false);
-  const lastUsedProvider = localStorage.getItem('lastUsedProvider');
 
   useEffect(() => {
-    setTimeout(() => {
-      setisMounted(true)
-    }, 1000)
-  }, [])
-  useEffect(() => {
+    setIsMounted(true);
+
     const checkProviders = () => {
       try {
+        // Replace 'getProviders()' with your specific library's detection method
+        // if using sats-connect, it's usually window.BitcoinProvider
         const providers = getProviders();
-        console.log("Detected Providers:", providers);
+
         if (providers) {
-          setIsXverseInstalled(!!providers.find(p => p.id === 'XverseProviders.BitcoinProvider'));
-          setIsLeatherInstalled(!!providers.find(p => p.id === 'LeatherProvider'));
+          setIsXverseInstalled(providers.some(p => p.id === 'XverseProviders.BitcoinProvider'));
+          setIsLeatherInstalled(providers.some(p => p.id === 'LeatherProvider'));
         }
       } catch (e) {
         console.error("Error detecting providers", e);
       }
     };
 
+    // 1. Initial check
     checkProviders();
-  }, [isMounted]);
+
+    // 2. Listen for the provider being injected (Real-time)
+    // Many BTC wallets use 'sats-connect_providerReady' or similar custom events
+    window.addEventListener("load", checkProviders);
+
+    // Standard event for wallet discovery
+    window.addEventListener("bitcoin#initialized", checkProviders);
+
+    return () => {
+      window.removeEventListener("load", checkProviders);
+      window.removeEventListener("bitcoin#initialized", checkProviders);
+    };
+  }, []);
 
   const handleConnect = async (provider: 'leather' | 'xverse') => {
     setConnecting(true);
