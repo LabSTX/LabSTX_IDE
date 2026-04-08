@@ -586,23 +586,26 @@ function App() {
     };
 
     // Initialize WebContainer
+    // App.tsx - Update the initWC effect
     useEffect(() => {
         const initWC = async () => {
+            // Only proceed if the workspace data has finished loading from IndexedDB
+            if (!isStateLoaded) return;
+
             try {
                 await webContainerService.boot();
                 console.log('[WebContainer] Booted successfully');
 
-                // Initial mount of files
-                const currentFiles = getLatestFiles();
-                const wcFiles = transformFilesToWC(currentFiles);
+                // Now 'files' contains your actual saved workspace
+                const wcFiles = transformFilesToWC(files);
                 await webContainerService.mountFiles(wcFiles);
-                console.log('[WebContainer] Files mounted');
+                console.log('[WebContainer] Files mounted with saved workspace');
             } catch (err) {
                 console.error('[WebContainer] Boot failed:', err);
             }
         };
         initWC();
-    }, []);
+    }, [isStateLoaded]); // Add isStateLoaded as a dependency
 
     // Helper to transform FileNode[] to WebContainer FS format
     const transformFilesToWC = (nodes: FileNode[]): any => {
@@ -1542,6 +1545,7 @@ Include the corrected full and detailed code`;
             }
             return prev;
         });
+        syncNodesToWebContainer(newFiles);
     }, [history, historyIndex, addToHistory, activeFileId]);
 
 
@@ -2450,7 +2454,7 @@ Include the corrected full and detailed code`;
 
             const newHistory = prevHistory.slice(0, historyIndex + 1);
             newHistory.push(newFiles);
-
+            syncNodesToWebContainer(newFiles);
             // Note: historyIndex will be updated in setHistoryIndex below
             return newHistory;
         });
@@ -2499,6 +2503,7 @@ Include the corrected full and detailed code`;
             ...prev,
             [activeWorkspace]: newFiles
         }));
+        syncNodesToWebContainer(newFiles);
         // -----------------------------------------
         // Auto-sync renamed state
         runFullSync(true, newFiles);
@@ -2548,7 +2553,7 @@ Include the corrected full and detailed code`;
         // -----------------------------------------
 
         addToHistory(newFiles);
-
+        syncNodesToWebContainer(newFiles);
         // Update Git
         setGitState(prev => ({
             ...prev,

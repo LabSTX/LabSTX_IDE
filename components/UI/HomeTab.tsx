@@ -242,17 +242,17 @@ const HomeTab: React.FC<HomeTabProps> = ({
                                     <IconButton icon={MessageSquareIcon} title="Discord" onClick={() => window.open('https://discord.gg/xpTRKeBDA3', '_blank')} />
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                <div className="grid grid-cols-1 gap-3 mb-6">
                                     <button
                                         onClick={() => window.open('https://docs.stacks.co', '_blank')}
-                                        className={`py-2.5 px-4 bg-transparent border ${isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600' : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300'} rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2`}
+                                        className={`py-2.5 px-4 bg-transparent border ${isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600' : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300'}  text-sm font-medium transition-all flex items-center justify-center gap-2`}
                                     >
                                         <BookOpenIcon size={16} className="text-slate-500" />
                                         Documentation
                                     </button>
                                     <button
                                         onClick={() => window.open('https://stacks.co', '_blank')}
-                                        className={`py-2.5 px-4 bg-transparent border ${isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600' : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300'} rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2`}
+                                        className={`hidden py-2.5 px-4 bg-transparent border ${isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600' : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300'} rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2`}
                                     >
                                         <GlobeIcon size={16} className="text-slate-500" />
                                         Website

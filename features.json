@@ -1,0 +1,29 @@
+[
+        {
+            "badge": "v1.2.1 Release",
+            "title": "Clarity 5 & Epoch 3.4 Upgrade",
+            "description": "Upgraded to Clarity 5 and Epoch 3.4",
+            "bullets": ["Clarity 5", "Epoch 3.4"],
+            "buttonText": "Read More",
+            "Link": "",
+            "icon": "BotIcon"
+        },
+        {
+            "badge": "Simnet",
+            "title": "Simnet Intergration",
+            "description": "Added Simnet Intergration for deployment, interaction , querying and testing of contracts",
+            "bullets": ["Simnet", "Deploy", "Query", "Test"],
+            "buttonText": "Check out",
+            "Link": "",
+            "icon": "CodeIcon"
+        },
+        {
+            "badge": "Refine Bugs & Ui Refinement",
+            "title": "Refine Bugs & Ui Refinement",
+            "description": "Added Stable Wallet Connection ,Improved Activity History , Added Inbuilt faucet for For free testnet tokens",
+            "bullets": ["Stable Wallet Connection", "Improved Activity History", "Added Inbuilt faucet for For free testnet tokens"],
+            "buttonText": "Read More",
+            "Link": "",
+            "icon": "RocketIcon"
+        }
+    ]
