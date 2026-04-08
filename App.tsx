@@ -3304,7 +3304,7 @@ Include the corrected full and detailed code`;
                         {/* Code Editor layer — always mounted so Monaco stays alive */}
                         <div
                             style={{ display: (activeTabGroup === 'file' && activeFileId) ? 'block' : 'none' }}
-                            className="absolute inset-0"
+                            className="absolute inset-0 "
                         >
                             <CodeEditor
                                 code={activeContent}

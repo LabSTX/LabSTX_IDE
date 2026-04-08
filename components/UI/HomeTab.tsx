@@ -123,7 +123,7 @@ const FeatureCard: React.FC<FeatureCardProps & { theme: 'dark' | 'light' }> = ({
 
                 <button
                     onClick={onClick}
-                    className={`mt-auto w-full py-3 ${isLight ? 'bg-slate-50 hover:bg-blue-500 text-slate-600 hover:text-white' : 'bg-[#232730] hover:bg-blue-500 text-slate-300 hover:text-white'} rounded-xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 group/btn`}
+                    className={`mt-auto w-full py-3 ${isLight ? 'bg-slate-400/20  border border-slate-400 hover:bg-blue-500 text-slate-600 hover:text-white' : 'bg-[#232730] hover:bg-blue-500 text-slate-300 hover:text-white'} text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 group/btn`}
                 >
                     {buttonText}
                     <ChevronRightIcon className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />

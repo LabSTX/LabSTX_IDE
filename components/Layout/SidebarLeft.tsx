@@ -882,7 +882,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
                 {/* Dropdown Menu */}
                 {isDropdownOpen && (
-                    <div className="absolute left-3 right-3 top-[calc(100%-8px)] z-50 mt-1 bg-caspier-dark border-2 border-caspier-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute left-3 right-3 top-[calc(100%-8px)] z-50 mt-1 bg-caspier-dark border-2 border-caspier-border  shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="p-1.5 space-y-0.5">
                             <DropdownItem
                                 icon={<FilePlusIcon className="w-3.5 h-3.5" />}

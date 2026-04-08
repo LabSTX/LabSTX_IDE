@@ -237,6 +237,11 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
                 </span>
               ) : file.name}
             </span>
+            {
+              isDirty && (
+                <div className="w-2 h-2 rounded-full bg-caspier-muted scale-75" />
+              )
+            }
 
             <div className="flex items-center justify-center w-4">
               {isDirty && !isActive && (

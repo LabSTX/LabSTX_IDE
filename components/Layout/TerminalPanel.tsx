@@ -372,11 +372,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
     useEffect(() => {
         if (pendingCommand && pendingCommand.timestamp > lastCommandTimestamp.current) {
             lastCommandTimestamp.current = pendingCommand.timestamp;
-            
+
             // If the command was sent to "temp", it means a new terminal was just created 
             // for it, and it should be the active one.
             const targetId = pendingCommand.terminalId === 'temp' ? activeTerminalId : pendingCommand.terminalId;
-            
+
             const data = xtermRefs.current[targetId];
             if (data && data.inputWriter) {
                 data.inputWriter.write(pendingCommand.command + '\r');

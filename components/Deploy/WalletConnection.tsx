@@ -151,7 +151,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
           <button
             onClick={() => handleConnect('xverse')}
             disabled={connecting}
-            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="relative flex flex-col items-center justify-center p-4 border border-zinc-400/20 bg-zinc-400/20  hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {/* Unstable Badge (Top Right) */}
             <span className="absolute -top-2 -right-2 bg-red-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10">
@@ -169,7 +169,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
             )}
           </button>
         ) : (
-          <div className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5">
+          <div className="flex flex-col items-center justify-center p-4 border border-zinc-400/20 bg-zinc-400/20">
             <img src="/xverse.png" alt="Xverse" className="h-10 w-10 mb-3 opacity-50 grayscale" />
             <span className="text-xs font-bold text-caspier-muted mb-3">Xverse</span>
             <a
@@ -189,7 +189,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
           <button
             onClick={() => handleConnect('leather')}
             disabled={connecting}
-            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="relative flex flex-col items-center justify-center p-4 border border-zinc-400/20 bg-zinc-400/20 hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="absolute -top-2 -right-2 bg-blue-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
               stable
@@ -203,7 +203,7 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
             )}
           </button>
         ) : (
-          <div className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5">
+          <div className="flex flex-col items-center justify-center p-4 border border-zinc-400/20 bg-zinc-400/20">
             <img src="/leather.svg" alt="Leather" className="h-10 w-10 mb-3 opacity-50 grayscale" />
             <span className="text-xs font-bold text-caspier-muted mb-3">Leather</span>
             <a

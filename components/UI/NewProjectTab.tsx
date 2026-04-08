@@ -5,6 +5,7 @@ import { GitHubTemplateService, GitHubTemplate } from '../../services/githubTemp
 import { HiroTemplateService, HiroTemplate, HIRO_TEMPLATES } from '../../services/hiroTemplates';
 import { FileNode } from '../../types';
 import { renderMarkdown } from '../../utils/markdownUtils';
+import { GitPullRequest } from 'lucide-react';
 
 interface NewProjectTabProps {
     onLoadTemplate: (nodes: FileNode[], templateName?: string, type?: string) => void;
@@ -154,9 +155,10 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                 <div>
                     <h2 className="text-2xl font-black tracking-widest uppercase ">New Project</h2>
                     <p className="text-caspier-muted text-[10px] mt-2 font-black uppercase tracking-[0.2em]">Select your starting point</p>
+                    <a href='https://github.com/LabSTX/LabSTX-Workshops/issues' target='_blank' onClick={() => { }}> <button className=" bg-caspier-black hover:underline  hover:text-blue-500 rounded-full text-caspier-muted transition-all text-caspier-muted text-[10px] mt-2 font-black  px-2 py-1 bg-caspier-muted/20 flex items-center " > <GitPullRequest className="w-4 h-4 mr-1" /> Request a Template</button></a>
+
                 </div>
 
-                <a href='https://github.com/LabSTX/LabSTX-Workshops/issues' target='_blank' onClick={() => { }}> <button className=" bg-caspier-black hover:underline  hover:text-blue-500 rounded-full text-caspier-muted transition-all text-caspier-muted text-[10px] mt-2 font-black uppercase tracking-[0.2em]" > Request a Template</button></a>
                 <button
                     onClick={onClose}
                     className="p-2 hover:bg-labstx-orange hover:text-white rounded-full text-caspier-muted transition-all border-2 border-transparent hover:border-white/20"
