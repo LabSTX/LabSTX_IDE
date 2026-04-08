@@ -1,20 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { WalletConnection } from '../../types';
 import { StacksWalletService } from '../../services/stacks/wallet';
 import { Button } from '../UI/Button';
 import { XIcon, CheckIcon, CopyIcon, CheckCircleIcon } from '../UI/Icons';
 import { getProviders } from 'sats-connect';
-import { DownloadCloud, X, XCircle } from 'lucide-react';
-import { connect } from '@stacks/connect';
-
-
-
-const providers = getProviders();
-
-// 1. Find the Xverse provider info from the array you saw in the console
-const isXverseInstalled = providers.find(p => p.id === 'XverseProviders.BitcoinProvider');
-const isLeatherInstalled = providers.find(p => p.id === 'LeatherProvider');
-console.log(providers)
+import { DownloadCloud, XCircle } from 'lucide-react';
 
 interface WalletConnectionProps {
   wallet: WalletConnection;
@@ -22,7 +12,7 @@ interface WalletConnectionProps {
   onDisconnect: () => void;
   network: 'testnet' | 'mainnet' | 'devnet' | 'mocknet' | 'simnet';
 }
-const win = window as any;
+
 const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   wallet,
   onConnect,
@@ -33,11 +23,35 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // --- New State for Wallet Detection ---
+  const [isXverseInstalled, setIsXverseInstalled] = useState(false);
+  const [isLeatherInstalled, setIsLeatherInstalled] = useState(false);
+  const lastUsedProvider = localStorage.getItem('lastUsedProvider');
+
+  useEffect(() => {
+    const checkProviders = () => {
+      try {
+        const providers = getProviders();
+        console.log("Detected Providers:", providers);
+
+        setIsXverseInstalled(!!providers.find(p => p.id === 'XverseProviders.BitcoinProvider'));
+        setIsLeatherInstalled(!!providers.find(p => p.id === 'LeatherProvider'));
+
+      } catch (e) {
+        console.error("Error detecting providers", e);
+      }
+    };
+
+    checkProviders();
+  }, []); // Runs once on mount
+  // --------------------------------------
+
   const handleConnect = async (provider: 'leather' | 'xverse') => {
     setConnecting(true);
     setError(null);
     try {
       const connection = await StacksWalletService.connect(network, provider);
+      localStorage.setItem('lastUsedProvider', provider);
       onConnect(connection);
     } catch (err: any) {
       setError(err.message || 'Failed to connect Stacks wallet');
@@ -112,82 +126,97 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
 
   return (
     <div className="space-y-4">
+      {isXverseInstalled || isLeatherInstalled ? (
+        <div className="flex flex-col pb-2">
+          <h3 className="text-sm font-semibold text-caspier-text">Connect your Stacks Wallet</h3>
+          <p className="text-xs text-caspier-muted mt-1">Select your preferred Stacks wallet provider to continue.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col pb-2">
+          <h3 className="text-sm font-semibold text-caspier-text">Install Xverse or Leather wallet</h3>
+          <p className="text-xs text-caspier-muted mt-1">You can download them from the official website or chrome extension store.</p>
+        </div>
+      )}
 
-      {isXverseInstalled || isLeatherInstalled ?
-        <div className="flex flex-col  pb-2">
-          <h3 className="text-sm font-semibold text-caspier-text">Connect your Stacks Wallet </h3>
-          <p className="text-xs text-caspier-muted mt-1 ">Select your preferred Stacks wallet provider to continue.</p>
-        </div>
-        : <div className="flex flex-col  pb-2">
-          <h3 className="text-sm font-semibold text-caspier-text">Install Xverse or Leather wallet </h3>
-          <p className="text-xs text-caspier-muted mt-1 ">You can download them from the official website or chrome extension store.</p>
-        </div>
-      }
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 text-xs text-red-400 animate-in fade-in slide-in-from-top-1">
-          <span className="shrink-0"><XCircle /></span>
+          <span className="shrink-0"><XCircle className="w-4 h-4" /></span>
           {error}
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        {isXverseInstalled ?
+        {/* Xverse Button Logic */}
+        {isXverseInstalled ? (
           <button
             onClick={() => handleConnect('xverse')}
             disabled={connecting}
-            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {/* Unstable Chip */}
-
-            <span className="absolute -top-2 -right-2 bg-red-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
+            {/* Unstable Badge (Top Right) */}
+            <span className="absolute -top-2 -right-2 bg-red-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10">
               unstable
             </span>
 
             <img src="/xverse.png" alt="Xverse" className="h-10 w-10 mb-3" />
-            <span className="text-xs font-bold text-caspier-text">Xverse</span>
-          </button> : <button
+            <span className="text-xs font-bold text-caspier-text mb-3">Xverse</span>
 
-
-            className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <img src="/xverse.png" alt="Xverse" className="h-10 w-10 mb-3" />
-            <span className="text-xs font-bold text-caspier-text">Xverse is not installed</span>
-            <a className='flex items-center gap-2 py-1' href="https://chromewebstore.google.com/detail/xverse-bitcoin-crypto-wal/idnnbdplmphpflfnlkomgpfbpcgelopg" target="_blank" rel="noopener noreferrer">
-              <DownloadCloud className="w-4 h-4 text-blue-500 hover:text-blue-600 hover:underline" /> <span className="text-[10px] hover:underline hover:text-blue-600 text-blue-500 font-bold">Download</span>
+            {/* Last Used Badge (Bottom Right) */}
+            {lastUsedProvider === 'xverse' && (
+              <span className="absolute bottom-0 right-0 bg-blue-800 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase tracking-tighter">
+                Last Used
+              </span>
+            )}
+          </button>
+        ) : (
+          <div className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5">
+            <img src="/xverse.png" alt="Xverse" className="h-10 w-10 mb-3 opacity-50 grayscale" />
+            <span className="text-xs font-bold text-caspier-muted mb-3">Xverse</span>
+            <a
+              className='flex items-center gap-2 py-1 mt-1'
+              href="https://chromewebstore.google.com/detail/xverse-bitcoin-crypto-wal/idnnbdplmphpflfnlkomgpfbpcgelopg"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadCloud className="w-4 h-4 text-blue-500" />
+              <span className="text-[10px] text-blue-500 font-bold hover:underline">Download</span>
             </a>
-          </button>}
+          </div>
+        )}
 
-
-        {isLeatherInstalled ?
-
+        {/* Leather Button Logic */}
+        {isLeatherInstalled ? (
           <button
             onClick={() => handleConnect('leather')}
             disabled={connecting}
-            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="relative flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {/* Unstable Chip */}
             <span className="absolute -top-2 -right-2 bg-blue-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
               stable
             </span>
-
             <img src="/leather.svg" alt="Leather" className="h-10 w-10 mb-3" />
-            <span className="text-xs font-bold text-caspier-text">Leather</span>
-
+            <span className="text-xs font-bold text-caspier-text mb-3">Leather</span>
+            {lastUsedProvider === 'leather' && (
+              <span className="absolute bottom-0 right-0 bg-blue-800 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase tracking-tighter">
+                Last Used
+              </span>
+            )}
           </button>
-
-          : <button
-
-            className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <img src="/leather.svg" alt="Leather" className="h-10 w-10 mb-3" />
-            <span className="text-xs font-bold text-caspier-text">Leather is not installed</span>
-            <a className='flex items-center gap-2 py-1' href="https://chromewebstore.google.com/detail/leather/ldinpeekobnhjjdofggfgjlcehhmanlj?hl=en" target="_blank" rel="noopener noreferrer">
-              <DownloadCloud className="w-4 h-4 text-blue-500 hover:text-blue-600 hover:underline" /> <span className="text-[10px] hover:underline hover:text-blue-600 text-blue-500 font-bold">Download</span>
+        ) : (
+          <div className="flex flex-col items-center justify-center p-4 border border-white/5 bg-white/5">
+            <img src="/leather.svg" alt="Leather" className="h-10 w-10 mb-3 opacity-50 grayscale" />
+            <span className="text-xs font-bold text-caspier-muted mb-3">Leather</span>
+            <a
+              className='flex items-center gap-2 py-1 mt-1'
+              href="https://chromewebstore.google.com/detail/leather/ldinpeekobnhjjdofggfgjlcehhmanlj"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadCloud className="w-4 h-4 text-blue-500" />
+              <span className="text-[10px] text-blue-500 font-bold hover:underline">Download</span>
             </a>
-          </button>}
-
-
-
+          </div>
+        )}
       </div>
 
       {connecting && (
@@ -195,7 +224,6 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
           Connecting to wallet...
         </div>
       )}
-
 
     </div>
   );
