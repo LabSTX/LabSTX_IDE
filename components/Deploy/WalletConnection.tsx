@@ -23,44 +23,57 @@ const WalletConnectionComponent: React.FC<WalletConnectionProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // --- New State for Wallet Detection ---
-  const [isMounted, setIsMounted] = useState(false);
+  const [isMounted, setisMounted] = useState(false);
   const [isXverseInstalled, setIsXverseInstalled] = useState(false);
   const [isLeatherInstalled, setIsLeatherInstalled] = useState(false);
 
+  // Safe check in case you are using Next.js/SSR
+  const lastUsedProvider = typeof window !== 'undefined' ? localStorage.getItem('lastUsedProvider') : null;
+
+  // Mount effect
   useEffect(() => {
-    setIsMounted(true);
+    const timeoutId = setTimeout(() => {
+      setisMounted(true);
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // Polling effect
+  useEffect(() => {
+    if (!isMounted) return;
 
     const checkProviders = () => {
       try {
-        // Replace 'getProviders()' with your specific library's detection method
-        // if using sats-connect, it's usually window.BitcoinProvider
         const providers = getProviders();
 
+        // Note: You might want to comment out the console.log to avoid spamming the console every second.
+        // console.log("Detected Providers:", providers); 
+
         if (providers) {
-          setIsXverseInstalled(providers.some(p => p.id === 'XverseProviders.BitcoinProvider'));
-          setIsLeatherInstalled(providers.some(p => p.id === 'LeatherProvider'));
+          setIsXverseInstalled(!!providers.find(p => p.id === 'XverseProviders.BitcoinProvider'));
+          setIsLeatherInstalled(!!providers.find(p => p.id === 'LeatherProvider'));
+
         }
       } catch (e) {
         console.error("Error detecting providers", e);
       }
     };
 
-    // 1. Initial check
+    // 1. Run the check immediately once
     checkProviders();
 
-    // 2. Listen for the provider being injected (Real-time)
-    // Many BTC wallets use 'sats-connect_providerReady' or similar custom events
-    window.addEventListener("load", checkProviders);
+    // 2. Set up the interval to run every 1000ms (1 second)
+    const intervalId = setInterval(() => {
+      checkProviders();
+    }, 1000);
 
-    // Standard event for wallet discovery
-    window.addEventListener("bitcoin#initialized", checkProviders);
-
+    // 3. Cleanup the interval when the component unmounts or dependencies change
     return () => {
-      window.removeEventListener("load", checkProviders);
-      window.removeEventListener("bitcoin#initialized", checkProviders);
+      clearInterval(intervalId);
     };
-  }, []);
+  }, [isMounted]);
+
 
   const handleConnect = async (provider: 'leather' | 'xverse') => {
     setConnecting(true);
