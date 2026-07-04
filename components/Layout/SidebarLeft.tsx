@@ -22,7 +22,7 @@ import ContractPanel from '../ContractPanel/ContractPanel';
 //import { TEMPLATES, templateToFileNodes } from '../../services/templates';
 import { DiscoveryImportModal, DiscoveryImportType, StacksNetworkType } from './DiscoveryImportModal';
 import { ArrowUpDown, CircleQuestionMarkIcon, CloudDownloadIcon, InfoIcon } from 'lucide-react';
-import DeployPanell from '@/xxxx/test';
+
 
 interface SidebarLeftProps {
     files: FileNode[];
@@ -74,6 +74,8 @@ interface SidebarLeftProps {
     setPrefilledContractInfo?: React.Dispatch<React.SetStateAction<{ address: string; name: string } | null>>;
     hasClarinet?: boolean;
     onStartTour?: (tourId: string) => void;
+    currentCwd?: string;
+    fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
 }
 
 interface ContextMenuProps {
@@ -188,6 +190,7 @@ interface FileTreeItemProps {
     onMoveNode?: (nodeId: string, targetParentId: string) => void;
     onExternalDrop?: (files: FileList, targetParentId: string) => void;
     onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
+    fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
 }
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({
@@ -195,7 +198,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
     onStartCreate, onStartRename, onDelete,
     creatingInNodeId, creatingType, onSubmitCreate, onCancelCreate,
     editingId, onSubmitRename, onCancelRename,
-    onMoveNode, onExternalDrop, onContextMenu
+    onMoveNode, onExternalDrop, onContextMenu, fileDiagnostics
 }) => {
     const [isOpen, setIsOpen] = useState(node.isOpen ?? true);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -279,6 +282,30 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
         }
     };
 
+    const getFolderDiagnostics = (n: FileNode): { errors: number, warnings: number } => {
+        let e = 0;
+        let w = 0;
+        if (n.type === 'file' && fileDiagnostics?.[n.id]) {
+            e += fileDiagnostics[n.id].errors;
+            w += fileDiagnostics[n.id].warnings;
+        }
+        if (n.children) {
+            for (const child of n.children) {
+                const res = getFolderDiagnostics(child);
+                e += res.errors;
+                w += res.warnings;
+            }
+        }
+        return { errors: e, warnings: w };
+    };
+
+    const diag = node.type === 'file' ? (fileDiagnostics?.[node.id] || { errors: 0, warnings: 0 }) : getFolderDiagnostics(node);
+    const hasError = diag.errors > 0;
+    const hasWarning = diag.errors === 0 && diag.warnings > 0;
+    // const totalCount = diag.errors + diag.warnings;
+    const textDiagnosticClass = hasError ? 'text-red-500' : (hasWarning ? 'text-yellow-500' : '');
+    const badgeBgClass = hasError ? 'bg-red-500/20 text-red-500' : (hasWarning ? 'bg-yellow-500/20 text-yellow-500' : '');
+
     return (
         <div className="select-none text-sm">
             <div
@@ -324,9 +351,25 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                             />
                         </div>
                     ) : (
-                        <span className="truncate block">{node.name}</span>
+                        <span className={`truncate block ${textDiagnosticClass}`}>{node.name}</span>
                     )}
                 </div>
+
+
+                {!isRenaming && (diag.errors > 0 || diag.warnings > 0) && (
+                    <span className="flex items-center gap-0.5 ml-1 flex-shrink-0">
+                        {diag.errors > 0 && (
+                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-500 leading-none">
+                                {diag.errors}
+                            </span>
+                        )}
+                        {diag.warnings > 0 && (
+                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-500 leading-none">
+                                {diag.warnings}
+                            </span>
+                        )}
+                    </span>
+                )}
 
                 {/* Hover Actions */}
                 {!isRenaming && (
@@ -421,6 +464,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                             onMoveNode={onMoveNode}
                             onExternalDrop={onExternalDrop}
                             onContextMenu={onContextMenu}
+                            fileDiagnostics={fileDiagnostics}
                         />
                     ))}
                 </div>
@@ -564,7 +608,9 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
     onOpenSimnetScratchpad, activeSimnetAccount, onSimnetAccountChange,
     onGoToInteract, onOpenContractCall, prefilledContractInfo, setPrefilledContractInfo,
     hasClarinet,
-    onStartTour
+    onStartTour,
+    currentCwd = '',
+    fileDiagnostics
 }) => {
     // Explorer State
     const [isExplorerDragOver, setIsExplorerDragOver] = useState(false);
@@ -817,295 +863,334 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
 
 
-    const renderExplorer = () => (
-        <div
-            id="explorer-view"
-            className={`h-full flex flex-col transition-colors ${isExplorerDragOver ? 'bg-labstx-orange/10' : ''}`}
-            onDragOver={(e) => {
-                e.preventDefault();
-                setIsExplorerDragOver(true);
-            }}
-            onDragLeave={() => setIsExplorerDragOver(false)}
-            onDrop={(e) => {
-                e.preventDefault();
-                setIsExplorerDragOver(false);
-                const nodeId = e.dataTransfer.getData('text/plain');
-                if (nodeId) {
-                    onMoveNode?.(nodeId, 'root');
-                } else if (e.dataTransfer.files.length > 0) {
-                    onExternalDrop?.(e.dataTransfer.files, 'root');
-                }
-            }}
-            onContextMenu={(e) => handleContextMenu(e, null)}
-        >
-            <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
-                <span className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">File Explorer</span>
-                <div className="flex gap-2">
-                    {/* Global Add Actions (Default to Root) */}
-                    <button
-                        className="text-caspier-muted hover:text-caspier-text p-1"
-                        title="New File"
-                        onClick={() => startCreate('root', 'file')}
-                    >
-                        <FilePlusIcon className="w-4 h-4" />
-                    </button>
-                    <button
-                        className="text-caspier-muted hover:text-caspier-text p-1"
-                        title="New Folder"
-                        onClick={() => startCreate('root', 'folder')}
-                    >
-                        <FolderPlusIcon className="w-4 h-4" />
-                    </button>
-                    <button
-                        className="text-caspier-muted hover:text-caspier-text p-1"
-                        title="Collapse All"
-                        onClick={onCollapseAll}
-                    >
-                        <CollapseIcon className="w-4 h-4" />
-                    </button>
+    const renderExplorer = () => {
+        // Parse CWD into breadcrumb segments
+        const cwdSegments = currentCwd
+            ? currentCwd.split('/').filter(seg => seg.length > 0)
+            : [];
+
+        const handleBreadcrumbClick = (index: number) => {
+            // Reconstruct path up to that index
+            const pathSegments = cwdSegments.slice(0, index);
+            const targetPath = pathSegments.join('/');
+            const cdCommand = targetPath ? `cd ${targetPath}` : 'cd';
+            onAddTerminalLine?.({ type: 'command', content: cdCommand });
+        };
+
+        return (
+            <div
+                id="explorer-view"
+                className={`h-full flex flex-col transition-colors ${isExplorerDragOver ? 'bg-labstx-orange/10' : ''}`}
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsExplorerDragOver(true);
+                }}
+                onDragLeave={() => setIsExplorerDragOver(false)}
+                onDrop={(e) => {
+                    e.preventDefault();
+                    setIsExplorerDragOver(false);
+                    const nodeId = e.dataTransfer.getData('text/plain');
+                    if (nodeId) {
+                        onMoveNode?.(nodeId, 'root');
+                    } else if (e.dataTransfer.files.length > 0) {
+                        onExternalDrop?.(e.dataTransfer.files, 'root');
+                    }
+                }}
+                onContextMenu={(e) => handleContextMenu(e, null)}
+            >
+                <div className="p-3 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
+                    <div className="flex items-center gap-2 text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">
+                        <span>Explorer</span>
+                        {cwdSegments.length > 0 && (
+                            <>
+                                <span className="text-caspier-muted/50">/</span>
+                                <div className="flex items-center gap-1">
+                                    {cwdSegments.map((seg, idx) => (
+                                        <div key={idx} className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleBreadcrumbClick(idx)}
+                                                className="text-caspier-muted hover:text-labstx-orange transition-colors px-1 cursor-pointer"
+                                                title={`Go to ${seg}`}
+                                            >
+                                                {seg}
+                                            </button>
+                                            {idx < cwdSegments.length - 1 && (
+                                                <span className="text-caspier-muted/50">/</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        {/* Global Add Actions (Default to Root) */}
+                        <button
+                            className="text-caspier-muted hover:text-caspier-text p-1"
+                            title="New File"
+                            onClick={() => startCreate('root', 'file')}
+                        >
+                            <FilePlusIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                            className="text-caspier-muted hover:text-caspier-text p-1"
+                            title="New Folder"
+                            onClick={() => startCreate('root', 'folder')}
+                        >
+                            <FolderPlusIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                            className="text-caspier-muted hover:text-caspier-text p-1"
+                            title="Collapse All"
+                            onClick={onCollapseAll}
+                        >
+                            <CollapseIcon className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            {/* Create Project Button with Dropdown */}
-            <div className="px-3 py-3 border-b border-caspier-border bg-caspier-black/40 relative" ref={dropdownRef}>
-                <button
-                    id="create-project-button"
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className="w-full flex items-center justify-between gap-2 py-2 px-4 bg-labstx-orange/10 hover:bg-labstx-orange text-labstx-orange hover:text-white border border-labstx-orange hover:border-labstx-orange rounded-full transition-all font-black text-[10px] uppercase tracking-widest group shadow-sm active:scale-[0.98]"
-                >
-                    <div className="flex items-center gap-2">
-                        <PlusIcon className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-300" />
-                        Create
-                    </div>
-                    <ChevronDownIcon className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Dropdown Menu */}
-                {isDropdownOpen && (
-                    <div className="absolute left-3 right-3 top-[calc(100%-8px)] z-50 mt-1 bg-caspier-dark border-2 border-caspier-border  shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="p-1.5 space-y-0.5">
-                            <DropdownItem
-                                icon={<FilePlusIcon className="w-3.5 h-3.5" />}
-                                label="New File"
-                                onClick={() => { startCreate('root', 'file'); setIsDropdownOpen(false); }}
-                            />
-                            <DropdownItem
-                                icon={<FolderPlusIcon className="w-3.5 h-3.5" />}
-                                label="New Folder"
-                                onClick={() => { startCreate('root', 'folder'); setIsDropdownOpen(false); }}
-                            />
-                            <div className="h-[1px] bg-caspier-border my-1 mx-2" />
-                            <DropdownItem
-                                icon={<PlusIcon className="w-3.5 h-3.5" />}
-                                label="Using Template"
-                                onClick={() => { onOpenNewProject?.(); setIsDropdownOpen(false); }}
-                            />
-                            <DropdownItem
-                                icon={<FilePlusIcon className="w-3.5 h-3.5" />}
-                                label="Upload Files"
-                                onClick={() => { onImport?.(); setIsDropdownOpen(false); }}
-                            />
-                            <DropdownItem
-                                icon={<FolderPlusIcon className="w-3.5 h-3.5" />}
-                                label="Upload Folder"
-                                onClick={() => { onImport?.(); setIsDropdownOpen(false); }}
-                            />
-                            <div className="h-[1px] bg-caspier-border my-1 mx-2" />
-                            <DropdownItem
-                                icon={<SearchIcon className="w-3.5 h-3.5 text-labstx-orange" />}
-                                label="Discovery Import"
-                                sublabel="TXID, CID, IPFS..."
-                                onClick={() => { setIsDiscoveryModalOpen(true); setIsDropdownOpen(false); }}
-                            />
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <DiscoveryImportModal
-                isOpen={isDiscoveryModalOpen}
-                onClose={() => setIsDiscoveryModalOpen(false)}
-                onImport={onDiscoveryImport || (async () => { })}
-                theme={theme === 'light' ? 'light' : 'dark'}
-                progress={discoveryProgress}
-            />
-
-            <div className="flex-1 overflow-y-auto py-2">
-                {/* Root Creation Input */}
-                {creatingInNodeId === 'root' && (
-                    <div
-                        className="flex items-center py-1 px-2 animate-in fade-in duration-200"
-                        style={{ paddingLeft: '8px' }}
+                {/* Create Project Button with Dropdown */}
+                <div className="px-3 py-3 border-b border-caspier-border bg-caspier-black/40 relative" ref={dropdownRef}>
+                    <button
+                        id="create-project-button"
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                        className="w-full flex items-center justify-between gap-2 py-2 px-4 bg-labstx-orange/10 hover:bg-labstx-orange text-labstx-orange hover:text-white border border-labstx-orange hover:border-labstx-orange rounded-full transition-all font-black text-[10px] uppercase tracking-widest group shadow-sm active:scale-[0.98]"
                     >
-                        <span className="mr-1.5 opacity-70 flex-shrink-0">
-                            <div className="w-3 h-3" />
-                        </span>
-                        <span className="mr-1.5 flex-shrink-0">
-                            {creatingType === 'folder' ? <FolderIcon className="w-4 h-4 text-labstx-orange" /> : <FileIcon className="w-4 h-4 text-caspier-muted" />}
-                        </span>
-                        <div className="flex-1 flex items-center gap-1">
-                            <input
-                                autoFocus
-                                type="text"
-                                className="w-full bg-caspier-black border border-labstx-orange text-caspier-text px-1 py-0.5 text-xs outline-none focus:shadow-[2px_2px_0_0_#007bff]"
-                                placeholder={creatingType === 'folder' ? "Folder Name" : "File Name"}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        submitCreate(e.currentTarget.value);
-                                    } else if (e.key === 'Escape') {
-                                        cancelCreate();
-                                    }
-                                }}
-                                onBlur={(e) => {
-                                    if (!e.target.value.trim()) cancelCreate();
-                                }}
-                            />
-                            <button
-                                onClick={(e) => {
-                                    const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                    submitCreate(input.value);
-                                }}
-                                className="text-green-500 hover:text-green-400"
-                            >
-                                <CheckIcon className="w-3 h-3" />
-                            </button>
-                            <button
-                                onClick={cancelCreate}
-                                className="text-red-500 hover:text-red-400"
-                            >
-                                <XIcon className="w-3 h-3" />
-                            </button>
+                        <div className="flex items-center gap-2">
+                            <PlusIcon className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-300" />
+                            Create
                         </div>
-                    </div>
-                )}
+                        <ChevronDownIcon className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
 
-                {!hasClarinet && (
-                    <div className="mx-3 my-2 p-3 bg-amber-500/10 border border-amber-500/20  flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                        <div className="flex items-center gap-2 text-amber-500">
-                            <CircleQuestionMarkIcon className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Notice</span>
-                        </div>
-                        <p className="text-[11px] text-caspier-muted leading-relaxed">
-                            This is not a <span className="text-caspier-text font-bold">Clarity project</span>.
-                        </p>
-                    </div>
-                )}
-
-                {files.map(node => (
-                    <FileTreeItem
-                        key={node.id}
-                        node={node}
-                        activeFileId={activeFileId}
-                        onSelect={onFileSelect}
-                        onStartCreate={startCreate}
-                        onStartRename={startRename}
-                        onDelete={onDeleteNode}
-                        creatingInNodeId={creatingInNodeId}
-                        creatingType={creatingType}
-                        onSubmitCreate={submitCreate}
-                        onCancelCreate={cancelCreate}
-                        editingId={editingId}
-                        onSubmitRename={submitRename}
-                        onCancelRename={cancelRename}
-                        onMoveNode={onMoveNode}
-                        onExternalDrop={onExternalDrop}
-                        onContextMenu={handleContextMenu}
-                    />
-                ))}
-            </div>
-
-            {/* Versions & Tools Accordion */}
-            <div className="border-t border-caspier-border bg-caspier-black/30 backdrop-blur-md">
-                <button
-                    onClick={() => setIsVersionsOpen(!isVersionsOpen)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 text-[10px] font-black text-caspier-muted uppercase tracking-[0.2em] hover:bg-caspier-hover transition-all group"
-                >
-                    <div className="flex items-center gap-2">
-                        <ActivityIcon className={`w-3.5 h-3.5 transition-colors ${isVersionsOpen ? 'text-labstx-orange' : 'text-caspier-muted opacity-50'}`} />
-                        <span className={isVersionsOpen ? 'text-caspier-text' : ''}>Versions & Runtime</span>
-                    </div>
-                    <ChevronDownIcon className={`w-3 h-3 transition-all duration-300 ${isVersionsOpen ? 'rotate-0 text-labstx-orange' : '-rotate-90 opacity-50'}`} />
-                </button>
-
-                {isVersionsOpen && (
-                    <div className="px-3 pb-4 space-y-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300">
-                        {/* Clarinet / Clarity SDK */}
-                        <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-labstx-orange/30 hover:bg-labstx-orange/[0.03] transition-all cursor-default relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-labstx-orange/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-labstx-orange/10 transition-colors" />
-                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black  border-2 border-caspier-border shadow-inner group-hover:border-labstx-orange/20 transition-colors relative z-10">
-                                <SmartFileIcon name="contract.clar" className="w-5 h-5" />
-                            </div>
-                            <div className="flex flex-col min-w-0 relative z-10">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest leading-none">Clarinet SDK</span>
-                                    <div className="h-2 w-[1px] bg-caspier-border" />
-                                    <span className="text-[8px] font-black text-labstx-orange bg-labstx-orange/10 px-1 rounded uppercase tracking-tighter">Compiler</span>
-                                </div>
-                                <div className='flex gap-1'>
-                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarity {systemVersions.clarity}</span>
-                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
-                                    </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarinet {systemVersions.clarinet}</span>
-                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
-                                    </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Epoch {systemVersions.epoch}</span>
-
-                                </div>
-
-
+                    {/* Dropdown Menu */}
+                    {isDropdownOpen && (
+                        <div className="absolute left-3 right-3 top-[calc(100%-8px)] z-50 mt-1 bg-caspier-dark border-2 border-caspier-border  shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="p-1.5 space-y-0.5">
+                                <DropdownItem
+                                    icon={<FilePlusIcon className="w-3.5 h-3.5" />}
+                                    label="New File"
+                                    onClick={() => { startCreate('root', 'file'); setIsDropdownOpen(false); }}
+                                />
+                                <DropdownItem
+                                    icon={<FolderPlusIcon className="w-3.5 h-3.5" />}
+                                    label="New Folder"
+                                    onClick={() => { startCreate('root', 'folder'); setIsDropdownOpen(false); }}
+                                />
+                                <div className="h-[1px] bg-caspier-border my-1 mx-2" />
+                                <DropdownItem
+                                    icon={<PlusIcon className="w-3.5 h-3.5" />}
+                                    label="Using Template"
+                                    onClick={() => { onOpenNewProject?.(); setIsDropdownOpen(false); }}
+                                />
+                                <DropdownItem
+                                    icon={<FilePlusIcon className="w-3.5 h-3.5" />}
+                                    label="Upload Files"
+                                    onClick={() => { onImport?.(); setIsDropdownOpen(false); }}
+                                />
+                                <DropdownItem
+                                    icon={<FolderPlusIcon className="w-3.5 h-3.5" />}
+                                    label="Upload Folder"
+                                    onClick={() => { onImport?.(); setIsDropdownOpen(false); }}
+                                />
+                                <div className="h-[1px] bg-caspier-border my-1 mx-2" />
+                                <DropdownItem
+                                    icon={<SearchIcon className="w-3.5 h-3.5 text-labstx-orange" />}
+                                    label="Discovery Import"
+                                    sublabel="TXID, CID, IPFS..."
+                                    onClick={() => { setIsDiscoveryModalOpen(true); setIsDropdownOpen(false); }}
+                                />
                             </div>
                         </div>
+                    )}
+                </div>
 
-                        {/* Node.js / NPM Terminal */}
-                        <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-green-500/30 hover:bg-green-500/[0.03] transition-all cursor-default relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-green-500/10 transition-colors" />
-                            <div className="w-8 h-8 flex items-center justify-center bg-caspier-black shadow-inner group-hover:border-green-500/20 transition-colors relative z-10">
+                <DiscoveryImportModal
+                    isOpen={isDiscoveryModalOpen}
+                    onClose={() => setIsDiscoveryModalOpen(false)}
+                    onImport={onDiscoveryImport || (async () => { })}
+                    theme={theme === 'light' ? 'light' : 'dark'}
+                    progress={discoveryProgress}
+                />
 
-                                {theme === 'dark' ? (
-                                    <img
-                                        src="/node.png"
-                                        alt="stacks"
-                                        className="block object-contain w-[40px]"
-                                    />
-                                ) : (
-                                    <img
-                                        src="/node.png"
-                                        alt="stacks"
-                                        className="block object-contain w-[60px]"
-                                    />
-                                )}
-
+                <div className="flex-1 overflow-y-auto py-2">
+                    {/* Root Creation Input */}
+                    {creatingInNodeId === 'root' && (
+                        <div
+                            className="flex items-center py-1 px-2 animate-in fade-in duration-200"
+                            style={{ paddingLeft: '8px' }}
+                        >
+                            <span className="mr-1.5 opacity-70 flex-shrink-0">
+                                <div className="w-3 h-3" />
+                            </span>
+                            <span className="mr-1.5 flex-shrink-0">
+                                {creatingType === 'folder' ? <FolderIcon className="w-4 h-4 text-labstx-orange" /> : <FileIcon className="w-4 h-4 text-caspier-muted" />}
+                            </span>
+                            <div className="flex-1 flex items-center gap-1">
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    className="w-full bg-caspier-black border border-labstx-orange text-caspier-text px-1 py-0.5 text-xs outline-none focus:shadow-[2px_2px_0_0_#007bff]"
+                                    placeholder={creatingType === 'folder' ? "Folder Name" : "File Name"}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            submitCreate(e.currentTarget.value);
+                                        } else if (e.key === 'Escape') {
+                                            cancelCreate();
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        if (!e.target.value.trim()) cancelCreate();
+                                    }}
+                                />
+                                <button
+                                    onClick={(e) => {
+                                        const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                        submitCreate(input.value);
+                                    }}
+                                    className="text-green-500 hover:text-green-400"
+                                >
+                                    <CheckIcon className="w-3 h-3" />
+                                </button>
+                                <button
+                                    onClick={cancelCreate}
+                                    className="text-red-500 hover:text-red-400"
+                                >
+                                    <XIcon className="w-3 h-3" />
+                                </button>
                             </div>
-                            <div className="flex flex-col min-w-0 flex-1 relative z-10">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                    <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest leading-none">Node terminal</span>
-                                    <div className="h-2 w-[1px] bg-caspier-border" />
-                                    <span className="text-[8px] font-black text-green-500 bg-green-500/10 px-1 rounded uppercase tracking-tighter">Active</span>
+                        </div>
+                    )}
+
+                    {!hasClarinet && (
+                        <div className="mx-3 my-2 p-3 bg-amber-500/10 border border-amber-500/20  flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                            <div className="flex items-center gap-2 text-amber-500">
+                                <CircleQuestionMarkIcon className="w-4 h-4" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Notice</span>
+                            </div>
+                            <p className="text-[11px] text-caspier-muted leading-relaxed">
+                                This is not a <span className="text-caspier-text font-bold">Clarity project</span>.
+                            </p>
+                        </div>
+                    )}
+
+                    {files.map(node => (
+                        <FileTreeItem
+                            key={node.id}
+                            node={node}
+                            activeFileId={activeFileId}
+                            onSelect={onFileSelect}
+                            onStartCreate={startCreate}
+                            onStartRename={startRename}
+                            onDelete={onDeleteNode}
+                            creatingInNodeId={creatingInNodeId}
+                            creatingType={creatingType}
+                            onSubmitCreate={submitCreate}
+                            onCancelCreate={cancelCreate}
+                            editingId={editingId}
+                            onSubmitRename={submitRename}
+                            onCancelRename={cancelRename}
+                            onMoveNode={onMoveNode}
+                            onExternalDrop={onExternalDrop}
+                            onContextMenu={handleContextMenu}
+                            fileDiagnostics={fileDiagnostics}
+                        />
+                    ))}
+                </div>
+
+                {/* Versions & Tools Accordion */}
+                <div className="border-t border-caspier-border bg-caspier-black/30 backdrop-blur-md">
+                    <button
+                        onClick={() => setIsVersionsOpen(!isVersionsOpen)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-[10px] font-black text-caspier-muted uppercase tracking-[0.2em] hover:bg-caspier-hover transition-all group"
+                    >
+                        <div className="flex items-center gap-2">
+                            <ActivityIcon className={`w-3.5 h-3.5 transition-colors ${isVersionsOpen ? 'text-labstx-orange' : 'text-caspier-muted opacity-50'}`} />
+                            <span className={isVersionsOpen ? 'text-caspier-text' : ''}>Versions & Runtime</span>
+                        </div>
+                        <ChevronDownIcon className={`w-3 h-3 transition-all duration-300 ${isVersionsOpen ? 'rotate-0 text-labstx-orange' : '-rotate-90 opacity-50'}`} />
+                    </button>
+
+                    {isVersionsOpen && (
+                        <div className="px-3 pb-4 space-y-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                            {/* Clarinet / Clarity SDK */}
+                            <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-labstx-orange/30 hover:bg-labstx-orange/[0.03] transition-all cursor-default relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-labstx-orange/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-labstx-orange/10 transition-colors" />
+                                <div className="w-8 h-8 flex items-center justify-center bg-caspier-black  border-2 border-caspier-border shadow-inner group-hover:border-labstx-orange/20 transition-colors relative z-10">
+                                    <SmartFileIcon name="contract.clar" className="w-5 h-5" />
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Node {systemVersions.node}</span>
-                                    <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded-md text-[9px] font-black text-red-500 shadow-sm">
-                                        <svg viewBox="0 0 18 18" className="w-2 h-2 fill-current">
-                                            <path d="M0 0v18h18V0H0zM14.545 14.545h-2.112v-6.331h-2.11v6.331H6.064V3.455h6.368v2.122H8.175v2.641h6.37v6.327z" />
-                                        </svg>
-                                        npm {systemVersions.npm}
+                                <div className="flex flex-col min-w-0 relative z-10">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest leading-none">Clarinet SDK</span>
+                                        <div className="h-2 w-[1px] bg-caspier-border" />
+                                        <span className="text-[8px] font-black text-labstx-orange bg-labstx-orange/10 px-1 rounded uppercase tracking-tighter">Compiler</span>
+                                    </div>
+                                    <div className='flex gap-1'>
+                                        <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarity {systemVersions.clarity}</span>
+                                        <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
+                                        </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Clarinet {systemVersions.clarinet}</span>
+                                        <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">|
+                                        </span> <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Epoch {systemVersions.epoch}</span>
+
+                                    </div>
+
+
+                                </div>
+                            </div>
+
+                            {/* Node.js / NPM Terminal */}
+                            <div className="flex items-center gap-3 p-2.5 bg-caspier-black/40 border-2 border-caspier-border/50 rounded-xl group hover:border-green-500/30 hover:bg-green-500/[0.03] transition-all cursor-default relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 blur-2xl rounded-full -mr-8 -mt-8 group-hover:bg-green-500/10 transition-colors" />
+                                <div className="w-8 h-8 flex items-center justify-center bg-caspier-black shadow-inner group-hover:border-green-500/20 transition-colors relative z-10">
+
+                                    {theme === 'dark' ? (
+                                        <img
+                                            src="/node.png"
+                                            alt="stacks"
+                                            className="block object-contain w-[40px]"
+                                        />
+                                    ) : (
+                                        <img
+                                            src="/node.png"
+                                            alt="stacks"
+                                            className="block object-contain w-[60px]"
+                                        />
+                                    )}
+
+                                </div>
+                                <div className="flex flex-col min-w-0 flex-1 relative z-10">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <span className="text-[9px] font-black text-caspier-muted uppercase tracking-widest leading-none">Node terminal</span>
+                                        <div className="h-2 w-[1px] bg-caspier-border" />
+                                        <span className="text-[8px] font-black text-green-500 bg-green-500/10 px-1 rounded uppercase tracking-tighter">Active</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-caspier-text truncate tracking-tight">Node {systemVersions.node}</span>
+                                        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded-md text-[9px] font-black text-red-500 shadow-sm">
+                                            <svg viewBox="0 0 18 18" className="w-2 h-2 fill-current">
+                                                <path d="M0 0v18h18V0H0zM14.545 14.545h-2.112v-6.331h-2.11v6.331H6.064V3.455h6.368v2.122H8.175v2.641h6.37v6.327z" />
+                                            </svg>
+                                            npm {systemVersions.npm}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+                </div>
+
+                {contextMenu && (
+                    <ContextMenu
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        node={contextMenu.node}
+                        onClose={() => setContextMenu(null)}
+                        onAction={handleContextMenuAction}
+                    />
                 )}
             </div>
-
-            {contextMenu && (
-                <ContextMenu
-                    x={contextMenu.x}
-                    y={contextMenu.y}
-                    node={contextMenu.node}
-                    onClose={() => setContextMenu(null)}
-                    onAction={handleContextMenuAction}
-                />
-            )}
-        </div>
-    );
+        );
+    };
 
     const renderSearch = () => (
         <div className="flex flex-col h-full bg-caspier-black">

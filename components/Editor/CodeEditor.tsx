@@ -1,418 +1,625 @@
+
 import React, { useEffect, useRef, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
-import { ClarityLSP } from '../../services/clarityLsp';
-import { ProjectSettings } from '../../types';
+import * as monacoLocal from 'monaco-editor';
+import {
+    initClarityLSP,
+    sendManifest,
+    sendDidOpen,
+    sendDidChange,
+    sendDidClose,
+    requestHover,
+    requestCompletion,
+    requestDefinition,
+    requestFormatting,
+    closeManifest,
+    resetLSP,
+    attachMonaco,
+    sendDidSave,
+} from '../../src/lsp/clarityClient';
+import { setupTextMate } from '../../src/lsp/textmate';
+import languageConfiguration from '../../src/lsp/language-configuration.json';
 
-// --- Helper: Standard debounce hook ---
-function useDebounce<T extends (...args: any[]) => void>(callback: T, delay: number) {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  return useCallback((...args: Parameters<T>) => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => callback(...args), delay);
-  }, [callback, delay]);
-}
+let providersRegistered = false;
 
-interface CodeEditorProps {
-  code: string;
-  language: string;
-  onChange: (value: string | undefined) => void;
-  readOnly?: boolean;
-  settings: ProjectSettings;
-  theme: 'dark' | 'light';
-  action?: { type: 'save' | 'gotoLine' | 'updateContent' | null, timestamp: number, line?: number, column?: number, content?: string };
-  onSave?: () => void;
-  findQuery?: string;
-  lineEnding?: 'LF' | 'CRLF';
-  onCursorChange?: (position: { lineNumber: number, column: number }) => void;
-  onActionComplete?: () => void;
-  activeFileId?: string | null;
-  onFileDrop?: (files: FileList) => void;
-}
+// Global LSP promise — shared across remounts so we don't re-init unnecessarily
+let lspReadyPromise: Promise<void> | null = null;
 
-const CodeEditor: React.FC<CodeEditorProps> = React.memo(({
-  code, language, onChange,
-  readOnly = false, settings, theme,
-  action, onSave, findQuery, lineEnding = 'LF',
-  onCursorChange, onActionComplete, activeFileId, onFileDrop
-}) => {
-  const monaco = useMonaco();
+let completionGeneration = 0;
 
-  // Using a Ref instead of State for the editor instance prevents unnecessary re-renders
-  const editorRef = useRef<any>(null);
-  const lastActionTimestampRef = useRef<number>(0);
-  const lastLineEndingRef = useRef<string>('');
+// ─── Debounce budgets ────────────────────────────────────────────────────────
+//
+//  Three tiers — ordered by user-visibility impact:
+//
+//  1. ONCHANGE (150 ms)  — parent state update.  Fast enough to feel instant
+//     while still batching rapid keystrokes, so the parent never re-renders on
+//     every character.
+//
+//  2. LSP_CHANGE (500 ms) — sendDidSave sync.  Triggers a full project re-check
+//     in the WASM core; needs a longer budget than a cheap incremental sync to
+//     avoid hammering the single-locked WASM core on every keystroke.
+//
+//  3. TEXTMATE (600 ms) — grammar re-application.  setupTextMate re-tokenises
+//     the whole document, which is expensive.  Only fire it after a real pause,
+//     not during fast typing.  The grammar handles incremental updates natively
+//     between these calls.
 
-  // ==========================================
-  // 1. STATE SYNCHRONIZATION (Performance Optimized)
-  // ==========================================
+const ONCHANGE_DEBOUNCE_MS = 150;
+const LSP_CHANGE_DEBOUNCE_MS = 800;
+const TEXTMATE_DEBOUNCE_MS = 600;
 
-  // Wait 300ms after they stop typing before sending the state up to React
-  const debouncedOnChange = useDebounce((val: string) => {
-    onChange(val);
-  }, 300);
-
-  // External Sync: Handle file switching or external code updates
-  useEffect(() => {
-    if (!editorRef.current) return;
-
-    // If the editor has focus, the user is actively typing. Do not overwrite them!
-    if (editorRef.current.hasTextFocus()) return;
-
-    const currentModelValue = editorRef.current.getValue();
-
-    // Only update Monaco if the parent state is actually different (e.g., switched files)
-    if (currentModelValue !== code) {
-      editorRef.current.setValue(code || '');
-    }
-  }, [code, activeFileId]);
-
-  // ==========================================
-  // 2. EDITOR ACTIONS & COMMANDS
-  // ==========================================
-
-  // Handle external actions (Save, GotoLine, UpdateContent)
-  useEffect(() => {
-    if (!editorRef.current || !action || !action.type || action.timestamp <= lastActionTimestampRef.current) return;
-
-    lastActionTimestampRef.current = action.timestamp;
-
-    if (action.type === 'save') {
-      // Force an immediate flush of the value before saving to ensure latest code is caught
-      onChange(editorRef.current.getValue());
-      onSave?.();
-    } else if (action.type === 'gotoLine' && action.line) {
-      const line = action.line;
-      const column = action.column ?? 1;
-      editorRef.current.revealLineInCenter(line);
-      editorRef.current.setPosition({ lineNumber: line, column });
-      editorRef.current.focus();
-    } else if (action.type === 'updateContent' && action.content !== undefined) {
-      editorRef.current.setValue(action.content);
-    }
-
-    onActionComplete?.();
-  }, [action, onSave, onActionComplete, onChange]);
-
-
-  // Handle find-in-code widget
-  useEffect(() => {
-    if (!editorRef.current || findQuery === undefined) return;
-    if (findQuery === '') {
-      editorRef.current.trigger('searchBox', 'closeFindWidget', null);
-      return;
-    }
-    try {
-      editorRef.current.trigger('searchBox', 'actions.find', null);
-      const findController = editorRef.current.getContribution('editor.contrib.findController') as any;
-      if (findController) findController.setSearchString(findQuery);
-    } catch (e) {
-      console.warn('Find widget error:', e);
-    }
-  }, [findQuery]);
-
-  // Handle line endings (LF/CRLF) 
-  useEffect(() => {
-    if (!editorRef.current || !monaco) return;
-    const model = editorRef.current.getModel();
-    if (!model) return;
-
-    const eol = lineEnding === 'CRLF'
-      ? monaco.editor.EndOfLineSequence.CRLF
-      : monaco.editor.EndOfLineSequence.LF;
-
-    if (model.getEndOfLineSequence() !== eol) {
-      model.setEOL(eol);
-      lastLineEndingRef.current = lineEnding;
-      // Notify parent immediately of the EOL change as it affects the content string
-      onChange(model.getValue());
-    }
-  }, [lineEnding, monaco, activeFileId]);
-
-  // ==========================================
-  // 3. MONACO SETUP (Languages & Themes)
-  // ==========================================
-
-  useEffect(() => {
-    if (monaco) {
-      // Register additional language features
-      monaco.languages.register({ id: 'rust' });
-      monaco.languages.register({ id: 'typescript' });
-      monaco.languages.register({ id: 'toml' });
-
-      // Configure TypeScript provider to ignore module-not-found errors (useful for WebContainers)
-      // This hides the red squiggly lines for imports that Monaco can't resolve locally
-      monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-        noSemanticValidation: false,
-        noSyntaxValidation: false,
-        diagnosticCodesToIgnore: [2307, 2305, 7016, 2792],
-      });
-
-      monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
-        noSemanticValidation: true,
-        noSyntaxValidation: false,
-        diagnosticCodesToIgnore: [2307, 2305, 7016, 2792],
-      });
-
-      monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ESNext,
-        allowNonTsExtensions: true,
-        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-        module: monaco.languages.typescript.ModuleKind.CommonJS,
-        noEmit: true,
-        esModuleInterop: true,
-        jsx: monaco.languages.typescript.JsxEmit.React,
-        allowJs: true,
-        typeRoots: ["node_modules/@types"]
-      });
-
-      // Register Clarity
-      monaco.languages.register({ id: 'clarity' });
-      monaco.languages.setMonarchTokensProvider('clarity', {
-        tokenizer: {
-          root: [
-            [/\b(define-public|define-private|define-read-only|define-constant|define-data-var|define-map|define-trait|define-fungible-token|define-non-fungible-token)\b/, 'keyword'],
-            [/\b(begin|let|if|match|asserts!|try!|unwrap!|unwrap-panic|unwrap-err!|unwrap-err-panic|ok|err|default-to)\b/, 'keyword'],
-            [/\b(var-get|var-set|map-get\?|map-set|map-insert|map-delete|get|merge)\b/, 'keyword'],
-            [/\b(stx-transfer\?|stx-get-balance|contract-call\?|as-contract|at-block|get-block-info\?)\b/, 'keyword'],
-            [/\b(is-eq|is-none|is-some|is-standard|not|and|or)\b/, 'keyword'],
-            [/\b(tx-sender|contract-caller|block-height|burn-block-height|stx-ledger-address)\b/, 'variable'],
-            [/\b(uint|int|bool|principal|buff|optional|response|list|string-ascii|string-utf8)\b/, 'type'],
-            [/[()]/, 'delimiter'],
-            [/\b[0-9]+\b/, 'number'],
-            [/\bu[0-9]+\b/, 'number'],
-            [/\b0x[0-9a-fA-F]+\b/, 'number'],
-            [/"[^"]*"/, 'string'],
-            [/'[^']*'/, 'string'],
-            [/;;.*$/, 'comment'],
-          ]
-        }
-      });
-
-      // Define Dark Theme
-      monaco.editor.defineTheme('caspier-dark', {
-        base: 'vs-dark',
-        inherit: true,
-        rules: [
-          { token: 'comment', foreground: '608b4e' },
-          { token: 'keyword', foreground: '007bff', fontStyle: 'bold' },
-          { token: 'string', foreground: 'ce9178' },
-          { token: 'number', foreground: 'b5cea8' },
-        ],
-        colors: {
-          'editor.background': '#0a0a0a',
-          'editor.foreground': '#e0e0e0',
-          'editorCursor.foreground': '#007bff',
-          'editor.lineHighlightBackground': '#111111',
-          'editorLineNumber.foreground': '#444444',
-          'editorLineNumber.activeForeground': '#007bff',
-          'editor.selectionBackground': '#007bff33',
-        }
-      });
-
-      // Define Light Theme
-      monaco.editor.defineTheme('caspier-light', {
-        base: 'vs',
-        inherit: true,
-        rules: [
-          { token: 'comment', foreground: '008000' },
-          { token: 'keyword', foreground: '007bff', fontStyle: 'bold' },
-          { token: 'string', foreground: 'a31515' },
-          { token: 'number', foreground: '098658' },
-        ],
-        colors: {
-          'editor.background': '#ffffff',
-          'editor.foreground': '#1a1a1a',
-          'editorCursor.foreground': '#007bff',
-          'editor.lineHighlightBackground': '#f9f9f9',
-          'editorLineNumber.foreground': '#9ca3af',
-          'editorLineNumber.activeForeground': '#007bff',
-          'editor.selectionBackground': '#007bff1a',
-        }
-      });
-
-      // --- REGISTER CLARITY LSP FEATURES ---
-      const completionDisp = monaco.languages.registerCompletionItemProvider('clarity', {
-        provideCompletionItems: (model: any, position: any) => {
-          const word = model.getWordUntilPosition(position);
-          const range = {
-            startLineNumber: position.lineNumber,
-            endLineNumber: position.lineNumber,
-            startColumn: word.startColumn,
-            endColumn: word.endColumn
-          };
-          return ClarityLSP.getCompletions(monaco, range);
-        }
-      });
-
-      const hoverDisp = monaco.languages.registerHoverProvider('clarity', {
-        provideHover: (model: any, position: any) => {
-          const word = model.getWordAtPosition(position);
-          if (!word) return null;
-          return ClarityLSP.getHover(word.word);
-        }
-      });
-
-      const defDisp = monaco.languages.registerDefinitionProvider('clarity', {
-        provideDefinition: (model: any, position: any) => {
-          const word = model.getWordAtPosition(position);
-          if (!word) return null;
-          return ClarityLSP.getDefinitions(model.getValue(), word.word, monaco);
-        }
-      });
-
-      const sigDisp = monaco.languages.registerSignatureHelpProvider('clarity', {
-        signatureHelpTriggerCharacters: ['(', ' '],
-        provideSignatureHelp: (model: any, position: any) => {
-          const textUntilPosition = model.getValueInRange({
-            startLineNumber: position.lineNumber,
-            startColumn: 1,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column
-          });
-          const lastOpenParen = textUntilPosition.lastIndexOf('(');
-          if (lastOpenParen !== -1) {
-            const funcNameMatch = textUntilPosition.substring(lastOpenParen + 1).match(/^([\w\+\-\*\/]+)/);
-            if (funcNameMatch) {
-              const help = ClarityLSP.getSignatureHelp(funcNameMatch[1]);
-              return help ? { value: help, dispose: () => { } } : null;
+const normalizeLanguageConfiguration = (config: any) => {
+    const normalizePairs = (pairs: any) => {
+        if (!Array.isArray(pairs)) return pairs;
+        return pairs.map((pair: any) => {
+            if (Array.isArray(pair) && pair.length === 2) {
+                return { open: pair[0], close: pair[1] };
             }
-          }
-          return null;
-        }
-      });
-
-      return () => {
-        completionDisp.dispose();
-        hoverDisp.dispose();
-        defDisp.dispose();
-        sigDisp.dispose();
-      };
-    }
-  }, [monaco]);
-
-  // Switch theme when prop changes
-  useEffect(() => {
-    if (monaco) {
-      monaco.editor.setTheme(theme === 'dark' ? 'caspier-dark' : 'caspier-light');
-    }
-  }, [monaco, theme]);
-
-  // --- CLARITY DIAGNOSTICS (Bracket Matching) ---
-  useEffect(() => {
-    if (!monaco || !editorRef.current || mapLanguage(language) !== 'clarity') return;
-
-    const model = editorRef.current.getModel();
-    if (!model) return;
-
-    const validate = () => {
-      const markers = ClarityLSP.getDiagnostics(model.getValue());
-      monaco.editor.setModelMarkers(model, 'claritylsp', markers);
+            return pair;
+        });
     };
 
-    // Initial validation
-    validate();
+    return {
+        ...config,
+        autoClosingPairs: normalizePairs(config.autoClosingPairs),
+        surroundingPairs: normalizePairs(config.surroundingPairs),
+    };
+};
 
-    // Trigger on content change (debounced)
-    let timer: ReturnType<typeof setTimeout>;
-    const disposable = model.onDidChangeContent(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        validate();
-      }, 500);
+const normalizeHoverContents = (contents: any): Array<{ value: string }> => {
+    if (contents === undefined || contents === null) return [];
+
+    const items = Array.isArray(contents) ? contents : [contents];
+    return items.flatMap((item: any) => {
+        if (typeof item === 'string') {
+            return [{ value: item }];
+        }
+
+        if (item && typeof item === 'object') {
+            if (typeof item.value === 'string') {
+                if (item.kind === 'markdown' || item.kind === 'MarkupContent') {
+                    return [{ value: item.value }];
+                }
+                if (item.language && item.language !== 'markdown') {
+                    return [{ value: `\`\`\`${item.language}\n${item.value}\n\`\`\`` }];
+                }
+                return [{ value: item.value }];
+            }
+        }
+
+        try {
+            return [{ value: JSON.stringify(item) }];
+        } catch {
+            return [];
+        }
     });
+};
 
-    return () => {
-      disposable.dispose();
-      clearTimeout(timer);
-      // Clear markers if we switch language away from clarity
-      if (model.isAttachedToEditor()) {
-        monaco.editor.setModelMarkers(model, 'claritylsp', []);
-      }
-    };
-  }, [monaco, language, activeFileId]);
+interface Props {
+    code: string;
+    filePath?: string;
+    activeFilePath?: string;
+    manifestFileContent?: string;
+    manifestFilePath?: string;
+    theme?: 'dark' | 'light';
+    language?: string;
+    settings?: any;
+    action?: any;
+    onChange?: (value: string | undefined) => void;
+    onSave?: () => void;
+    onActionComplete?: () => void;
+    findQuery?: string;
+    lineEnding?: string;
+    onCursorChange?: (position: any) => void;
+    activeFileId?: string;
+    onFileDrop?: (files: FileList | File[]) => void;
+    onRunNodeCommand?: (command: string) => void;
+    devnetFileContent?: string;
+    onUnassociatedContract?: (path: string) => void;
+}
 
-  const mapLanguage = (lang: string) => {
-    if (lang === 'rust' || lang === 'rs') return 'rust';
-    if (lang === 'typescript' || lang === 'ts' || lang === 'assemblyscript' || lang === 'as') return 'typescript';
-    if (lang === 'clarity' || lang === 'clar') return 'clarity';
-    if (lang === 'sol' || lang === 'solidity') return 'sol';
-    if (lang === 'js' || lang === 'javascript') return 'javascript';
-    if (lang === 'toml') return 'toml';
-    if (lang === 'makefile') return 'makefile';
-    if (lang === 'json') return 'json';
-    if (lang === 'markdown' || lang === 'md') return 'markdown';
-    if (lang === 'plaintext' || lang === 'txt') return 'plaintext';
-    return lang;
-  };
+const CodeEditor: React.FC<Props> = ({
+    code,
+    filePath,
+    activeFilePath,
+    manifestFileContent,
+    devnetFileContent,
+    theme = 'dark',
+    language,
+    onChange,
+    onCursorChange,
+    onUnassociatedContract,
+}) => {
+    const monaco = useMonaco();
 
-  return (
-    <div
-      className="w-full h-full overflow-hidden relative"
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.dataTransfer.files.length > 0) {
-          onFileDrop?.(e.dataTransfer.files);
+    useEffect(() => {
+        if (monaco) attachMonaco(monaco);
+    }, [monaco]);
+
+    const docVersionRef = useRef(1);
+    const editorRef = useRef<monacoLocal.editor.IStandaloneCodeEditor | null>(null);
+
+    // ─── Debounce timer handles ───────────────────────────────────────────────
+    const textMateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const onChangeDebouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lspChangeDebouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const textMateAppliedRef = useRef(false);
+
+    // ─── Ref-based "last value we sent upward" ───────────────────────────────
+    //
+    //  We need to distinguish between:
+    //    (a) `code` changed because the user typed (we sent it via onChange → parent stored it)
+    //    (b) `code` changed because the parent set it externally (file load, format, etc.)
+    //
+    //  In case (a) we must NOT push the value back into Monaco — Monaco already
+    //  has it.  In case (b) we must call editor.setValue() to sync.
+    //
+    //  lastSentValueRef tracks the most recent value we dispatched upward, so
+    //  the useEffect below can tell the two cases apart.
+    const lastSentValueRef = useRef<string>(code);
+
+    // ─── Ref-stable handles for props used inside long-lived closures ────────
+    //
+    //  Monaco event listeners are registered once on mount.  If we close over
+    //  `onChange` / `onCursorChange` directly those closures would hold stale
+    //  references when the parent re-renders with new callbacks.  Storing props
+    //  in refs and always reading the ref inside the listener keeps callbacks
+    //  fresh without re-registering the listener.
+    const onChangeRef = useRef(onChange);
+    const onCursorChangeRef = useRef(onCursorChange);
+
+    useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+    useEffect(() => { onCursorChangeRef.current = onCursorChange; }, [onCursorChange]);
+
+    // ─── Ref-stable contractUri for closures ─────────────────────────────────
+    //
+    //  LSP calls inside onDidChangeModelContent need the current contractUri,
+    //  but the listener is registered once on mount with the URI at that point.
+    //  Storing it in a ref lets the listener always pick up the latest path.
+    const contractUriRef = useRef('');
+
+    const safePath = activeFilePath || filePath;
+    const isClarity = !!safePath && safePath.toLowerCase().endsWith('.clar');
+    const languageId = isClarity ? 'clarity' : (language || 'plaintext');
+    const contractUri = safePath ? `file:///${safePath.startsWith('/') ? safePath.slice(1) : safePath}` : '';
+    const contractRelPath = safePath ? safePath.replace(/^\//, '') : '';
+    const manifestContent = manifestFileContent ?? '';
+
+    useEffect(() => {
+        contractUriRef.current = contractUri;
+    }, [contractUri]);
+
+    const onUnassociatedContractRef = useRef(onUnassociatedContract);
+    useEffect(() => { onUnassociatedContractRef.current = onUnassociatedContract; }, [onUnassociatedContract]);
+
+    useEffect(() => {
+        if (!isClarity || !manifestContent || !contractRelPath) return;
+
+        const paths: string[] = [];
+        const lines = manifestContent.split('\n');
+        let inContractsSection = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('[')) {
+                inContractsSection = trimmed.startsWith('[contracts');
+            } else if (inContractsSection && trimmed.startsWith('path')) {
+                const match = trimmed.match(/path\s*=\s*['"]([^'"]+)['"]/);
+                if (match && match[1]) {
+                    paths.push(match[1]);
+                }
+            }
         }
-      }}
-    >
-      <Editor
-        height="100%"
-        theme={theme === 'dark' ? 'caspier-dark' : 'caspier-light'}
-        language={mapLanguage(language)}
-        path={activeFileId || 'default'}
 
-        // UNCONTROLLED MODE: Pass initial value, but let Monaco handle internal typing state
-        defaultValue={code}
+        const normalizedRelPath = contractRelPath.replace(/\\/g, '/');
+        const isAssociated = paths.some(p => normalizedRelPath.endsWith(p.replace(/\\/g, '/')));
 
-        onChange={(value) => {
-          if (value !== undefined) {
-            debouncedOnChange(value);
-          }
-        }}
+        if (!isAssociated && onUnassociatedContractRef.current) {
+            onUnassociatedContractRef.current(contractRelPath);
+        }
+    }, [contractRelPath, manifestContent, isClarity]);
 
-        onMount={(editor) => {
-          editorRef.current = editor;
+    // ─── 1. Register Clarity language config ─────────────────────────────────
+    useEffect(() => {
+        if (!monaco || !isClarity) return;
+        const hasClarity = monaco.languages.getLanguages().some((lang) => lang.id === 'clarity');
+        if (!hasClarity) monaco.languages.register({ id: 'clarity' });
+        monaco.languages.setLanguageConfiguration(
+            'clarity',
+            normalizeLanguageConfiguration(languageConfiguration) as any
+        );
+    }, [monaco, isClarity]);
 
-          // Immediate Sync on Blur: If the user clicks away, flush state instantly
-          editor.onDidBlurEditorText(() => {
-            onChange(editor.getValue());
-          });
+    // ─── 2. Boot LSP eagerly ─────────────────────────────────────────────────
+    useEffect(() => {
+        if (!isClarity) return;
 
-          // Debounced Cursor Position: Prevents spamming parent component with state updates
-          let cursorTimeout: ReturnType<typeof setTimeout>;
-          editor.onDidChangeCursorPosition((ev: any) => {
-            clearTimeout(cursorTimeout);
-            cursorTimeout = setTimeout(() => {
-              onCursorChange?.({
-                lineNumber: ev.position.lineNumber,
-                column: ev.position.column
-              });
-            }, 100);
-          });
-        }}
+        docVersionRef.current = 1;
+        textMateAppliedRef.current = false;
 
-        options={React.useMemo(() => ({
-          readOnly,
-          minimap: { enabled: settings.minimap },
-          fontSize: settings.fontSize,
-          wordWrap: settings.wordWrap,
-          tabSize: settings.tabSize,
-          fontFamily: "'JetBrains Mono', monospace",
-          scrollBeyondLastLine: false,
-          automaticLayout: true,
-          padding: { top: 16, bottom: 16 },
-          cursorBlinking: 'smooth',
-          cursorSmoothCaretAnimation: 'on',
-          renderLineHighlight: 'line',
-        }), [readOnly, settings])}
-      />
-    </div>
-  );
-});
+        const setupLSP = async (retry = true): Promise<void> => {
+            try {
+                await initClarityLSP();
+                await sendManifest(manifestContent, { [contractUri]: code }, devnetFileContent, contractRelPath);
+                await sendDidOpen(contractUri, 'clarity', docVersionRef.current, code);
+                console.debug('[CodeEditor] LSP ready for', contractUri);
+            } catch (err) {
+                console.error('[CodeEditor] LSP Error:', err);
+                if (retry) {
+                    console.log('[CodeEditor] Retrying LSP initialization...');
+                    resetLSP();
+                    return setupLSP(false);
+                }
+            }
+        };
+
+        lspReadyPromise = setupLSP();
+
+        return () => {
+            sendDidClose(contractUri);
+            closeManifest();
+            lspReadyPromise = null;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [contractUri, manifestContent, isClarity]);
+
+    // ─── 3. Sync EXTERNAL code changes into the editor ───────────────────────
+    //
+    //  This is the intentional counterpart to going uncontrolled.
+    //
+    //  When the parent changes `code` for a reason OTHER than the user typing
+    //  (e.g. file load, auto-format, template insert), we need to push the new
+    //  value into Monaco.  But when `code` changed because WE sent it via
+    //  onChange, pushing it back would:
+    //    • reset the cursor to position 0 (editor.setValue resets selection)
+    //    • trigger another onDidChangeModelContent → infinite loop
+    //
+    //  The guard `code === lastSentValueRef.current` short-circuits case (a).
+    //  Only genuinely external updates reach editor.setValue().
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+
+        // This value came from us — do nothing.
+        if (code === lastSentValueRef.current) return;
+
+        // External update: sync into Monaco while preserving cursor position.
+        lastSentValueRef.current = code;
+        const currentEditorValue = editor.getValue();
+        if (currentEditorValue === code) return; // already in sync, bail early
+
+        const position = editor.getPosition();
+        editor.setValue(code);
+
+        if (position) {
+            const lineCount = editor.getModel()?.getLineCount() ?? 1;
+            editor.setPosition({
+                lineNumber: Math.min(position.lineNumber, lineCount),
+                column: position.column,
+            });
+        }
+    }, [code]);
+
+    // ─── 4. Debounced TextMate application ───────────────────────────────────
+    const scheduleTextMate = useCallback(() => {
+        if (!monaco || !isClarity) return;
+        if (textMateTimerRef.current !== null) clearTimeout(textMateTimerRef.current);
+
+        textMateTimerRef.current = setTimeout(async () => {
+            textMateTimerRef.current = null;
+            const editor = editorRef.current;
+            if (!editor) return;
+            try {
+                await setupTextMate(monaco, editor);
+                textMateAppliedRef.current = true;
+                console.debug('[CodeEditor] TextMate grammar applied');
+            } catch (err) {
+                console.debug('[CodeEditor] TextMate setup failed:', err);
+            }
+        }, TEXTMATE_DEBOUNCE_MS);
+    }, [monaco, isClarity]);
+
+    // ─── 5. Editor mount ─────────────────────────────────────────────────────
+    const handleMount = useCallback(async (
+        editor: monacoLocal.editor.IStandaloneCodeEditor
+    ) => {
+        if (!monaco) return;
+        attachMonaco(monaco);
+        editorRef.current = editor;
+
+        // Seed lastSentValueRef with what the editor actually holds right now
+        // (it was initialised from `defaultValue`, which equals `code` at mount).
+        lastSentValueRef.current = editor.getValue();
+
+        if (isClarity) {
+            if (!monaco.languages.getLanguages().find(l => l.id === 'clarity')) {
+                monaco.languages.register({ id: 'clarity' });
+            }
+
+            // ── Register language providers (once per session) ───────────────
+            if (!providersRegistered) {
+                providersRegistered = true;
+
+                // Hover -------------------------------------------------------
+                monaco.languages.registerHoverProvider('clarity', {
+                    provideHover: async (model, position) => {
+                        if (lspReadyPromise) {
+                            try { await lspReadyPromise; } catch { /* already logged */ }
+                        }
+
+                        const uri = model.uri.toString();
+                        const useLine = position.lineNumber;
+                        const useCol = position.column;
+
+                        console.debug('[CodeEditor] Hover at', useLine, useCol);
+
+                        let res: any;
+                        try {
+                            res = await Promise.race([
+                                requestHover(uri, useLine - 1, useCol - 1),
+                                new Promise<null>((_, reject) =>
+                                    setTimeout(() => reject(new Error('hover timeout')), 1500)
+                                )
+                            ]);
+                        } catch (err) {
+                            console.debug('[CodeEditor] Hover error/timeout:', err);
+                            res = null;
+                        }
+
+                        const hoverItems = Array.isArray(res) ? res : [res];
+                        let contents = hoverItems.flatMap((item: any) =>
+                            normalizeHoverContents(item?.contents)
+                        );
+
+                        if (contents.length === 0) return null;
+
+                        const rangeSource = hoverItems.find((item: any) => item?.range);
+                        const normalizedRange = rangeSource?.range;
+
+                        if (!normalizedRange) return { contents };
+
+                        return {
+                            range: new monaco.Range(
+                                normalizedRange.start.line + 1, normalizedRange.start.character + 1,
+                                normalizedRange.end.line + 1, normalizedRange.end.character + 1
+                            ),
+                            contents
+                        };
+                    }
+                });
+
+                // Completion --------------------------------------------------
+                monaco.languages.registerCompletionItemProvider('clarity', {
+                    provideCompletionItems: async (model, position) => {
+                        const myGen = ++completionGeneration;
+                        if (lspReadyPromise) {
+                            try { await lspReadyPromise; } catch { /* already logged */ }
+                        }
+                        try {
+                            const res = await requestCompletion(
+                                model.uri.toString(), position.lineNumber - 1, position.column - 1
+                            );
+                            if (myGen !== completionGeneration) return { suggestions: [] };
+                            const items = Array.isArray(res) ? res : (res?.items ?? []);
+                            if (!items.length) return { suggestions: [] };
+                            return {
+                                suggestions: items.map((item: any) => {
+                                    const insertText = item.insertText || item.textEdit?.newText || item.label;
+                                    const isSnippet = item.insertTextFormat === 2 || insertText.includes('${');
+                                    return {
+                                        label: item.label,
+                                        kind: item.kind,
+                                        insertText: insertText,
+                                        insertTextRules: isSnippet
+                                            ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                                            : undefined,
+                                        documentation: item.documentation,
+                                        detail: item.detail
+                                    };
+                                })
+                            };
+                        } catch (err) {
+                            console.debug('[CodeEditor] Completion failed', err);
+                            return { suggestions: [] };
+                        }
+                    }
+                });
+
+                // Definition --------------------------------------------------
+                monaco.languages.registerDefinitionProvider('clarity', {
+                    provideDefinition: async (model, position) => {
+                        if (lspReadyPromise) {
+                            try { await lspReadyPromise; } catch { /* already logged */ }
+                        }
+                        try {
+                            const res = await requestDefinition(
+                                model.uri.toString(), position.lineNumber - 1, position.column - 1
+                            );
+                            if (!res) return null;
+                            const loc = Array.isArray(res) ? res[0] : res;
+                            if (!loc) return null;
+                            return {
+                                uri: monaco.Uri.parse(loc.uri),
+                                range: new monaco.Range(
+                                    loc.range.start.line + 1, loc.range.start.character + 1,
+                                    loc.range.end.line + 1, loc.range.end.character + 1
+                                )
+                            };
+                        } catch (err) {
+                            console.debug('[CodeEditor] Definition failed', err);
+                            return null;
+                        }
+                    }
+                });
+
+                // Formatting --------------------------------------------------
+                monaco.languages.registerDocumentFormattingEditProvider('clarity', {
+                    provideDocumentFormattingEdits: async (model) => {
+                        if (lspReadyPromise) {
+                            try { await lspReadyPromise; } catch { /* already logged */ }
+                        }
+                        try {
+                            const res = await requestFormatting(model.uri.toString());
+                            if (!res) return [];
+                            return res.map((edit: any) => ({
+                                range: new monaco.Range(
+                                    edit.range.start.line + 1, edit.range.start.character + 1,
+                                    edit.range.end.line + 1, edit.range.end.character + 1
+                                ),
+                                text: edit.newText
+                            }));
+                        } catch (err) {
+                            console.debug('[CodeEditor] Formatting failed', err);
+                            return [];
+                        }
+                    }
+                });
+            }
+        }
+
+        // ── Content change listener ────────────────────────────────────────────
+        //
+        //  This replaces the old `onChange` prop on <Editor>.
+        //
+        //  Why?  The `value` controlled prop creates a React round-trip:
+        //    type → onChange → parent setState → re-render → value prop back
+        //    into Monaco → Monaco model update.
+        //
+        //  That loop adds latency (React scheduler + diffing) between a
+        //  keypress and the model being "stable", which is perceivable as
+        //  lag and can cause cursor glitches if the re-render lands while
+        //  the user is mid-gesture.
+        //
+        //  Monaco's own text buffer is always authoritative.  We listen to
+        //  it here and propagate outward with appropriate debouncing — parent
+        //  state is a *cache* of Monaco's buffer, not the other way around.
+        //
+        //  IMPORTANT: Registered for ALL file types, not just Clarity.
+        //  This enables dirty file tracking for markdown, JSON, etc.
+        const contentDisposable = editor.onDidChangeModelContent(() => {
+            const value = editor.getValue();
+            const uri = contractUriRef.current;
+            docVersionRef.current += 1;
+
+            const currentDocVersion = docVersionRef.current;
+
+            // Tier 1 — parent state (150 ms) ──────────────────────────────────
+            //  Short enough to feel instant, long enough to coalesce bursts
+            //  of characters into single setState calls.
+            //  Runs for ALL file types to enable dirty tracking.
+            if (onChangeDebouncedRef.current) clearTimeout(onChangeDebouncedRef.current);
+            onChangeDebouncedRef.current = setTimeout(() => {
+                if (isClarity) {
+                    sendDidChange(uri, currentDocVersion, value);
+                }
+                lastSentValueRef.current = value; // mark before calling onChange
+                onChangeRef.current?.(value);
+            }, ONCHANGE_DEBOUNCE_MS);
+
+            // Tier 2 — sendDidSave (500 ms) ───────────────────────────────────
+            //  Triggers a full project re-check in the WASM core, which causes
+            //  the LSP to emit publishDiagnostics.  Longer budget than a cheap
+            //  incremental sync to avoid hammering the single-locked WASM core.
+            //  Only runs for Clarity files.
+            if (isClarity) {
+                if (lspChangeDebouncedRef.current) clearTimeout(lspChangeDebouncedRef.current);
+                lspChangeDebouncedRef.current = setTimeout(() => {
+                    sendDidSave(uri, value).catch((err) =>
+                        console.warn('[ClarityLSP] sendDidSave failed', err)
+                    );
+                }, LSP_CHANGE_DEBOUNCE_MS);
+            }
+
+            // Tier 3 — TextMate re-tokenisation (600 ms) ──────────────────────
+            //  setupTextMate re-tokenises the whole document.  Only do it
+            //  after the user genuinely pauses; the native incremental
+            //  tokeniser handles everything in between.
+            //  Only runs for Clarity files.
+            if (isClarity) {
+                scheduleTextMate();
+            }
+        });
+
+        if (isClarity) {
+            // ── Cursor listener ───────────────────────────────────────────────
+            try {
+                const pos = editor.getPosition();
+                if (pos) onCursorChangeRef.current?.({ lineNumber: pos.lineNumber, column: pos.column });
+
+                const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
+                    onCursorChangeRef.current?.({ lineNumber: e.position.lineNumber, column: e.position.column });
+                });
+
+                editor.onDidDispose(() => {
+                    try { contentDisposable.dispose(); } catch { }
+                    try { cursorDisposable.dispose(); } catch { }
+                });
+            } catch (err) {
+                console.debug('[CodeEditor] Failed to attach cursor listener', err);
+            }
+
+            // ── Initial TextMate pass ─────────────────────────────────────────
+            scheduleTextMate();
+        } else {
+            // ── Cleanup for non-Clarity files ──────────────────────────────────
+            //  Still need to dispose contentDisposable to avoid memory leaks
+            try {
+                editor.onDidDispose(() => {
+                    try { contentDisposable.dispose(); } catch { }
+                });
+            } catch (err) {
+                console.debug('[CodeEditor] Failed to attach cleanup listener', err);
+            }
+        }
+    }, [monaco, isClarity, scheduleTextMate]);
+    //
+    //  Note: onChange / onCursorChange are intentionally NOT in the dep array.
+    //  They are accessed via onChangeRef / onCursorChangeRef so the listener
+    //  is registered once and always calls the latest callback.
+
+    // ─── 6. Cleanup all timers on unmount ────────────────────────────────────
+    useEffect(() => {
+        return () => {
+            if (textMateTimerRef.current !== null) clearTimeout(textMateTimerRef.current);
+            if (onChangeDebouncedRef.current !== null) clearTimeout(onChangeDebouncedRef.current);
+            if (lspChangeDebouncedRef.current !== null) clearTimeout(lspChangeDebouncedRef.current);
+        };
+    }, []);
+
+    return (
+        <div className="h-full w-full border border-white/10 overflow-visible">
+            <Editor
+                height="100%"
+                path={contractUri}
+                defaultLanguage={languageId}
+                defaultValue={code}
+                // ↑ KEY: `defaultValue` instead of `value`.
+                //
+                // `value` is a controlled prop — Monaco React calls
+                // editor.setValue() on every render that produces a new `value`
+                // string, resetting the cursor and interrupting in-flight IME
+                // compositions.
+                //
+                // `defaultValue` is used only when Monaco creates a new model
+                // for this `path`.  After that, Monaco owns its buffer; we
+                // push external updates via editor.setValue() in the useEffect
+                // above, only when the parent genuinely changed the code from
+                // outside.
+                theme={theme === 'dark' ? 'vs-dark' : 'light'}
+                // onChange prop removed — all change handling happens inside
+                // onDidChangeModelContent registered in handleMount above.
+                onMount={handleMount}
+                options={{
+                    fontSize: 14,
+                    minimap: { enabled: false },
+                    automaticLayout: true,
+                    quickSuggestions: isClarity,
+                    wordBasedSuggestions: 'off',
+                    hover: isClarity ? { enabled: true, delay: 300 } : { enabled: false },
+                }}
+            />
+        </div>
+    );
+};
 
 export default CodeEditor;

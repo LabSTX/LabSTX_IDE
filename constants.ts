@@ -28,10 +28,13 @@ authors = []
 telemetry = false
 cache_dir = "./.requirements"
 
+[network]
+name = "testnet"
+
 [contracts.simple-counter]
 path = "contracts/simple-counter.clar"
 clarity_version = 3
-epoch = 'latest'`
+epoch = "latest"`
   },
   {
     id: 'contracts',

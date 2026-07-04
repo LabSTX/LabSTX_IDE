@@ -17,6 +17,7 @@ interface EditorTabsProps {
   dirtyFileIds: string[];
   settings?: ProjectSettings;
   onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
+  fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
 }
 
 const EditorTabs: React.FC<EditorTabsProps> = ({
@@ -31,7 +32,8 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
   modifiedFileIds,
   dirtyFileIds,
   settings,
-  onUpdateSettings
+  onUpdateSettings,
+  fileDiagnostics
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -181,6 +183,13 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
         const isDirty = dirtyFileIds.includes(id);
         const isSpecialId = id.startsWith('@');
 
+        const diag = fileDiagnostics?.[id] || { errors: 0, warnings: 0 };
+        const hasError = diag.errors > 0;
+        const hasWarning = diag.errors === 0 && diag.warnings > 0;
+        //  const totalCount = diag.errors + diag.warnings;
+        const textDiagnosticClass = hasError ? 'text-red-500' : (hasWarning ? 'text-yellow-500' : '');
+        // const badgeBgClass = hasError ? 'bg-red-500/20 text-red-500' : (hasWarning ? 'bg-yellow-500/20 text-yellow-500' : '');
+
         return (
           <div
             key={id}
@@ -236,11 +245,28 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
                   <span className="text-[9px] font-bold uppercase tracking-widest text-blue-400/80 bg-blue-400/10 border border-blue-400/20 px-1 rounded">MD</span>
                   <span className="truncate" onMouseEnter={(e) => e.currentTarget.style.overflow = 'visible'} onMouseLeave={(e) => e.currentTarget.style.overflow = 'hidden'}>{file.srcName}</span>
                 </span>
-              ) : file.name}
+              ) : (
+                <span className={textDiagnosticClass}>{file.name}</span>
+              )}
             </span>
+
+            {(diag.errors > 0 || diag.warnings > 0) && (
+              <span className="flex items-center gap-0.5 flex-shrink-0">
+                {diag.errors > 0 && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-500 leading-none">
+                    {diag.errors}
+                  </span>
+                )}
+                {diag.warnings > 0 && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-500 leading-none">
+                    {diag.warnings}
+                  </span>
+                )}
+              </span>
+            )}
             {
               isDirty && (
-                <div className="w-2 h-2 rounded-full bg-caspier-muted scale-75" />
+                <div className="ml-1 w-2 h-2 rounded-full bg-caspier-muted scale-75" />
               )
             }
 

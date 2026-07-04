@@ -35,6 +35,7 @@ export interface TerminalLine {
     content: string;
     timestamp?: number;
     data?: any;
+    prompt?: string;
 }
 
 export interface TerminalInstance {

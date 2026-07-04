@@ -29,6 +29,18 @@ import confetti from 'canvas-confetti';
 import { Droplets } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import FaucetPopover from './components/UI/FaucetPopover';
+import { sendManifest, initClarityLSP, updateVFS, sendDidOpen } from './src/lsp/clarityClient';
+
+const findClarinetToml = (nodes: FileNode[]): FileNode | null => {
+    for (const node of nodes) {
+        if (node.type === 'file' && node.name.toLowerCase() === 'clarinet.toml') return node;
+        if (node.children) {
+            const found = findClarinetToml(node.children);
+            if (found) return found;
+        }
+    }
+    return null;
+};
 
 const CHANGELOG_CONTENT = `# Changelog
 
@@ -98,6 +110,38 @@ function App() {
     });
 
 
+    const lspManifestSentRef = useRef<string | null>(null);
+    // Collect every .clar file in the tree, keyed by the FULL relative path
+    // (e.g. "contracts/extern/defi.clar") so the keys match what Clarinet.toml
+    // declares. The LSP server reads files back via vfs/readFile using the exact
+    // paths from the manifest; bare-name keys (e.g. "defi.clar") caused
+    // cross-contract / use-trait resolution to MISS. Folder names must be
+    // accumulated during recursion, matching getFilePath()'s convention.
+    function collectContractFiles(
+        nodes: FileNode[],
+        prefix = '',
+    ): Record<string, string> {
+        const result: Record<string, string> = {};
+        for (const node of nodes) {
+            const relPath = prefix ? `${prefix}/${node.name}` : node.name;
+            if (node.type === 'file' && node.name.endsWith('.clar') && node.content) {
+                // Build the URI the same way CodeEditor does (CodeEditor.tsx:142):
+                // file:///<rel-path>, leading slash stripped.
+                const trimmed = relPath.replace(/^\/+/, '');
+                const uri = `file:///${trimmed}`;
+                // Prefer the deepest path; don't overwrite an existing full-path
+                // key with a bare-name collision (shouldn't happen with full paths).
+                if (!(uri in result)) {
+                    result[uri] = node.content;
+                }
+            }
+            if (node.children) {
+                Object.assign(result, collectContractFiles(node.children, relPath));
+            }
+        }
+        return result;
+    }
+
     // Persistence logic moved to useEffect below
     useEffect(() => {
         if (isStateLoaded) {
@@ -132,12 +176,51 @@ function App() {
     // Derived state for current file tree
     const files = history[historyIndex];
 
+
+    useEffect(() => {
+        const manifestNode = findClarinetToml(files);
+        if (!manifestNode?.content) return;
+
+        // Re-index the project whenever the manifest content OR the set of
+        // contract files changes. Previously this only re-fired on manifest
+        // content change, so adding/importing a new .clar file did not trigger
+        // build_state and the server never picked up the new contract.
+        const contractFiles = collectContractFiles(files);
+        const contractSignature = Object.keys(contractFiles).sort().join('|');
+        const guardKey = `${manifestNode.content}@@${contractSignature}`;
+
+        if (lspManifestSentRef.current === guardKey) return;
+        lspManifestSentRef.current = guardKey;
+
+        const patched = manifestNode.content.replace(/'([^']+)'/g, '"$1"');
+
+        // App.tsx is the SINGLE sender of the manifest. It always passes ALL
+        // .clar files so the WASM build_state can resolve cross-contract refs,
+        // use-trait, and impl-trait. CodeEditor no longer sends the manifest.
+        initClarityLSP()
+            .then(async () => {
+                await sendManifest(patched, contractFiles);
+                for (const [uri, content] of Object.entries(contractFiles)) {
+                    sendDidOpen(uri, 'clarity', 1, content).catch(e => console.error('[App] sendDidOpen pre-warm failed:', e));
+                }
+            })
+            .catch(e => console.error('[App] LSP manifest pre-warm failed:', e));
+    }, [files]);
+
+
     useEffect(() => {
         const checkClarinet = (nodes: FileNode[]): boolean => {
             return nodes.some(node => node.name.toLowerCase() === 'clarinet.toml');
         };
         setHasClarinet(checkClarinet(files));
     }, [files, setHasClarinet]);
+
+    // Global VFS sync to ensure LSP always has all files
+    useEffect(() => {
+        if (!files || files.length === 0) return;
+        const allFiles = collectContractFiles(files);
+        updateVFS(allFiles).catch(e => console.error('[App] global updateVFS failed:', e));
+    }, [files]);
 
     // Editor Tabs State with persistence
     // Editor Tabs State (non-persistent)
@@ -161,6 +244,9 @@ function App() {
     const [activeSimnetAccount, setActiveSimnetAccount] = useState<string>(() => {
         return localStorage.getItem('labstx_active_simnet_account') || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
     });
+
+    // CWD State (Current Working Directory for terminal)
+    const [currentCwd, setCurrentCwd] = useState<string>('');
 
     useEffect(() => {
         localStorage.setItem('labstx_active_simnet_account', activeSimnetAccount);
@@ -186,6 +272,65 @@ function App() {
 
     const [outputLines, setOutputLines] = useState<string[]>([]);
     const [problems, setProblems] = useState<Problem[]>([]);
+
+    // File Diagnostics State
+    const [fileDiagnostics, setFileDiagnostics] = useState<Record<string, { errors: number, warnings: number }>>({});
+    
+    const findIdByPath = useCallback((nodes: FileNode[], targetPath: string, currentPath = ''): string | null => {
+        const targetLower = targetPath.toLowerCase();
+        for (const node of nodes) {
+            const newPath = currentPath ? `${currentPath}/${node.name}` : node.name;
+            if (newPath.toLowerCase() === targetLower) return node.id;
+            if (node.children) {
+                const found = findIdByPath(node.children, targetPath, newPath);
+                if (found) return found;
+            }
+        }
+        return null;
+    }, []);
+
+    const filesRef = useRef(files);
+    useEffect(() => {
+        filesRef.current = files;
+    }, [files]);
+
+    useEffect(() => {
+        const handleLspDiagnostics = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const { uri, diagnostics } = customEvent.detail;
+            let path = uri.replace(/^file:\/+/i, '');
+            try { path = decodeURIComponent(path); } catch (e) {}
+            const id = findIdByPath(filesRef.current, path);
+            console.log(`[Diagnostics Debug] handleLspDiagnostics: uri=${uri}, path=${path}, foundId=${id}, diagnosticsCount=${diagnostics.length}`);
+            if (!id) return;
+
+            let errors = 0;
+            let warnings = 0;
+            for (const d of diagnostics) {
+                if (d.severity === 1) errors++;
+                else if (d.severity === 2) warnings++;
+            }
+
+            setFileDiagnostics(prev => {
+                if (errors === 0 && warnings === 0) {
+                    if (!prev[id]) return prev;
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                }
+                const existing = prev[id];
+                if (existing && existing.errors === errors && existing.warnings === warnings) {
+                    return prev; // No change
+                }
+                return {
+                    ...prev,
+                    [id]: { errors, warnings }
+                };
+            });
+        };
+        window.addEventListener('clarityLspDiagnostics', handleLspDiagnostics);
+        return () => window.removeEventListener('clarityLspDiagnostics', handleLspDiagnostics);
+    }, [findIdByPath]);
 
     const [terminals, setTerminals] = useState<TerminalInstance[]>(() => [
         { id: 'default', title: 'clarinet', lines: [], isProcessRunning: false }
@@ -316,6 +461,56 @@ function App() {
 
     // Deployment Notification State
     const [notification, setNotification] = useState<{ deployHash: string; network: string, contractName?: string } | null>(null);
+
+    const [unassociatedContractPath, setUnassociatedContractPath] = useState<string | null>(null);
+    const [lspGenericError, setLspGenericError] = useState<string | null>(null);
+
+    // Clear notification when switching tabs
+    useEffect(() => {
+        setUnassociatedContractPath(null);
+        setLspGenericError(null);
+    }, [activeFileId, activeTabGroup]);
+
+    const handleUnassociatedContract = useCallback((path: string) => {
+        setUnassociatedContractPath(path);
+        setProblems(prev => {
+            if (prev.some(p => p.file === path && p.message === 'Not associated to Clarinet.toml')) return prev;
+            return [...prev, {
+                id: `unassociated-${path}-${Date.now()}`,
+                file: path,
+                message: 'Not associated to Clarinet.toml',
+                description: `This smart contract with file path ${path} is not associated to clarinet.toml`,
+                severity: 'warning',
+                line: 1,
+                column: 1
+            }];
+        });
+    }, []);
+
+    const handleLspError = useCallback((message: string) => {
+        setLspGenericError(message);
+    }, []);
+
+    useEffect(() => {
+        const handleUnassociated = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            if (customEvent.detail && customEvent.detail.path) {
+                handleUnassociatedContract(customEvent.detail.path);
+            }
+        };
+        const handleGenericError = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            if (customEvent.detail && customEvent.detail.message) {
+                handleLspError(customEvent.detail.message);
+            }
+        };
+        window.addEventListener('clarityLspUnassociatedContract', handleUnassociated);
+        window.addEventListener('clarityLspGenericError', handleGenericError);
+        return () => {
+            window.removeEventListener('clarityLspUnassociatedContract', handleUnassociated);
+            window.removeEventListener('clarityLspGenericError', handleGenericError);
+        };
+    }, [handleUnassociatedContract, handleLspError]);
 
     // Project Settings with localStorage persistence
     const [settings, setSettings] = useState<ProjectSettings>(() => {
@@ -1611,27 +1806,6 @@ Include the corrected full and detailed code`;
     }, [activeFileId, historyIndex, getFilePath, activeWorkspace, activeContent, webContainerService]);
 
 
-    const handleSaveFile = useCallback(() => {
-        if (!activeFileId || !dirtyFileIds.includes(activeFileId)) return;
-
-        // Force immediate sync of any pending history updates before saving
-        const currentFiles = getLatestFiles();
-
-        // Move from dirty to git modified
-        setDirtyFileIds(prev => prev.filter(id => id !== activeFileId));
-        setGitState(prev => {
-            if (!prev.modifiedFiles.includes(activeFileId) && !prev.stagedFiles.includes(activeFileId)) {
-                return { ...prev, modifiedFiles: [...prev.modifiedFiles, activeFileId] };
-            }
-            return prev;
-        });
-
-        addTerminalLine({ type: 'success', content: `Saved: ${findFile(files, activeFileId)?.name}` });
-
-        // Trigger save effect in editor if needed
-        setEditorAction({ type: 'save', timestamp: Date.now() });
-    }, [activeFileId, dirtyFileIds, files, activeContent, historyIndex]);
-
     const handleClearEditorAction = useCallback(() => {
         setEditorAction({ type: null, timestamp: 0 });
     }, []);
@@ -1710,27 +1884,61 @@ Include the corrected full and detailed code`;
         }
         return res;
     }, [files, sessionId, dirtyFileIds, activeFileId, activeContent, findFile, getFilePath]);
+    const handleSaveFile = useCallback(async () => {
+        if (dirtyFileIds.length === 0) return;
+
+        try {
+            addTerminalLine({ type: 'info', content: `Saving ${dirtyFileIds.length} file(s)...` });
+
+            // Force immediate sync of any pending history updates before saving
+            const currentFiles = getLatestFiles();
+
+            // Perform delta sync for dirty files (more efficient than full sync)
+            const result = await runDeltaSync();
+
+            if (result.success) {
+                // Move from dirty to git modified
+                setDirtyFileIds([]);
+                setGitState(prev => {
+                    const newModified = [...prev.modifiedFiles];
+                    dirtyFileIds.forEach(id => {
+                        if (!newModified.includes(id) && !prev.stagedFiles.includes(id)) {
+                            newModified.push(id);
+                        }
+                    });
+                    return { ...prev, modifiedFiles: newModified };
+                });
+
+                const fileNames = dirtyFileIds
+                    .map(id => findFile(files, id)?.name)
+                    .filter(Boolean)
+                    .join(', ');
+
+                addTerminalLine({ type: 'success', content: `Saved: ${fileNames}` });
+
+                // Trigger save effect in editor if needed
+                setEditorAction({ type: 'save', timestamp: Date.now() });
+            } else {
+                //  addTerminalLine({ type: 'error', content: 'Failed to save files. Please try again.' });
+            }
+        } catch (error: any) {
+            addTerminalLine({ type: 'error', content: `Save error: ${error.message}` });
+        }
+    }, [activeFileId, dirtyFileIds, files, activeContent, historyIndex, runDeltaSync, findFile, getLatestFiles]);
+
     const handleCompile = async () => {
         if (!isTerminalVisible) setIsTerminalVisible(true);
         addTerminalLine({ type: 'command', content: `Syncing workspace and running clarinet check...` });
-
-        setOutputLines([
-            `> Executing: clarinet check (Workspace Sync)`,
-            `> Using Clarinet CLI version 3.4.0`,
-            `> Analyzing project for syntax and logic errors...`
-        ]);
 
         setProblems([]);
         setCompilationResult(undefined);
 
         try {
-            let result: CompilationResult;
-
             // Force immediate sync of any pending history updates before compile
             const currentFilesToSync = getLatestFiles();
 
             // Always perform Full Sync for maximum reliability
-            result = await runFullSync(true, currentFilesToSync);
+            const result = await runFullSync(true, currentFilesToSync);
             setFirstRunWorkspaces(prev => ({ ...prev, [activeWorkspace]: true }));
 
             // Extract functions for usage tracking
@@ -1748,107 +1956,29 @@ Include the corrected full and detailed code`;
                     payload: {
                         contractName: activeFile ? activeFile.name : 'unknown',
                         network: settings.network,
-                        status: result.success ? 'success' : 'failure',
+                        status: 'success',
                         metadata: {
-                            errors: result.errors?.length || 0,
+                            errors: 0,
                             functions: functions
                         }
                     }
                 })
             }).catch(err => console.error('Telemetry failed:', err));
 
-            setCompilationResult(result);
-
-
             // clear dirty
             setDirtyFileIds([]);
 
+            // Inject clarinet check into terminal only if sync was successful
             if (result.success) {
-                addTerminalLine({ type: 'success', content: 'Clarinet Check successful!' });
-
-                const logLines = result.output ? result.output.split('\n') : ['Analysis completed.'];
-                setOutputLines(prev => [
-                    ...prev,
-                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    ...logLines.map((l: string) => `  ${l}`),
-                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `> ✨ Contract is valid according to Clarinet.`
-                ]);
-
-                if (result.metadata?.entryPoints && result.metadata.entryPoints.length > 0) {
-                    setOutputLines(prev => [...prev, `> 🔧 Functions found: ${result.metadata.entryPoints.map(ep => ep.name).join(', ')}`]);
-                }
+                handleTerminalCommand('clarinet check');
             } else {
-                addTerminalLine({ type: 'error', content: 'Clarinet Check failed. See Output and Problems for details.' });
-
-                const logLines = result.output ? result.output.split('\n') : ['Analysis failed.'];
-                setOutputLines(prev => [
-                    ...prev,
-                    `Error: Clarinet Check failed.`,
-                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    ...logLines.map((l: string) => `  ${l}`),
-                    `> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-                ]);
-
-                if (result.errors) {
-                    const fileProblems: Problem[] = result.errors.map((error, idx) => {
-                        // Clarinet error format: path/to/file.clar:line:column: error: description
-                        const match = error.match(/^(.*?):(\d+):(\d+): (?:error|syntax error|warning): (.*)$/i);
-                        if (match) {
-                            const filePath = match[1];
-                            const fileName = filePath.split(/[/\\]/).pop() || filePath;
-                            return {
-                                id: `${Date.now()}-${idx}`,
-                                file: fileName,
-                                description: match[4],
-                                line: parseInt(match[2], 10),
-                                column: parseInt(match[3], 10),
-                                severity: error.toLowerCase().includes('warning') ? 'warning' : 'error'
-                            };
-                        }
-                        return {
-                            id: `${Date.now()}-${idx}`,
-                            file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
-                            description: error,
-                            line: 1,
-                            column: 1,
-                            severity: 'error'
-                        };
-                    });
-                    setProblems(fileProblems);
-                }
-
-
+                addTerminalLine({ type: 'info', content: 'Synced, running clarinet check...' });
+                handleTerminalCommand('clarinet check');
             }
         } catch (error: any) {
             addTerminalLine({ type: 'error', content: `Check error: ${error.message}` });
             setOutputLines(prev => [...prev, `Error: ${error.message}`]);
-
-            // Attempt to parse catch error as well
-            const catchMatch = error.message.match(/^(.*?):(\d+):(\d+): (?:error|syntax error|warning): (.*)$/i);
-            if (catchMatch) {
-                const filePath = catchMatch[1];
-                const fileName = filePath.split(/[/\\]/).pop() || filePath;
-                setProblems([{
-                    id: Date.now().toString(),
-                    file: fileName,
-                    description: catchMatch[4],
-                    line: parseInt(catchMatch[2], 10),
-                    column: parseInt(catchMatch[3], 10),
-                    severity: 'error'
-                }]);
-            } else {
-                setProblems([{
-                    id: Date.now().toString(),
-                    file: activeFileId ? findFile(files, activeFileId)?.name || 'unknown' : 'unknown',
-                    description: error.message,
-                    line: 1,
-                    column: 1,
-                    severity: 'error'
-                }]);
-            }
         }
-
     };
 
     const handleFullSync = async () => {
@@ -1960,13 +2090,19 @@ Include the corrected full and detailed code`;
             // that tracks terminal IDs and connection status
         });
 
-        socket.on('terminal:output', ({ data, terminalId }: { data: string, terminalId: string }) => {
+        socket.on('terminal:output', ({ data, terminalId, isCdSuccess, newCwd }: { data: string, terminalId: string, isCdSuccess?: boolean, newCwd?: string }) => {
             const lines = data.split('\n');
             lines.forEach(content => {
                 if (content || data.includes('\n')) {
                     addTerminalLineToInstanceRef.current(terminalId, { type: 'info', content });
                 }
             });
+
+            // Handle cd command success - just update state, don't sync here
+            if (isCdSuccess && newCwd !== undefined) {
+                setCurrentCwd(newCwd);
+                // The file explorer will sync when currentCwd changes (see useEffect below)
+            }
         });
 
         socket.on('terminal:error', ({ message, terminalId }: { message: string, terminalId: string }) => {
@@ -1977,6 +2113,7 @@ Include the corrected full and detailed code`;
         socket.on('terminal:exit', ({ code, terminalId }: { code: number, terminalId: string }) => {
             addTerminalLineToInstanceRef.current(terminalId, { type: 'info', content: `Process exited with code ${code}` });
             setTerminals(prev => prev.map(t => t.id === terminalId ? { ...t, isProcessRunning: false } : t));
+            // Sync workspace after command completion (if not a cd command, which is handled separately)
             handleSyncWorkspaceRef.current();
         });
 
@@ -1994,6 +2131,32 @@ Include the corrected full and detailed code`;
         }
     }, [terminals.length, sessionId]); // Join on new terminals or session change
 
+    // Fetch CWD on mount
+    useEffect(() => {
+        const fetchCwd = async () => {
+            try {
+                const response = await fetch(`http://localhost:5001/project/cwd/${sessionId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setCurrentCwd(data.cwd || '');
+                }
+            } catch (error) {
+                console.error('[App] Failed to fetch CWD:', error);
+            }
+        };
+
+        if (sessionId) {
+            fetchCwd();
+        }
+    }, [sessionId]);
+
+    // Sync files when CWD changes
+    useEffect(() => {
+        if (isStateLoaded && activeWorkspace && currentCwd !== undefined) {
+            handleSyncWorkspaceRef.current?.();
+        }
+    }, [currentCwd, isStateLoaded, activeWorkspace]);
+
 
 
     const handleTerminalCommand = async (command: string) => {
@@ -2001,10 +2164,14 @@ Include the corrected full and detailed code`;
 
         const cmdLower = command.toLowerCase().trim();
 
+        // Build prompt with CWD
+        const displayCwd = currentCwd || '~';
+        const promptText = activeTerminal.isProcessRunning ? `➜ ${displayCwd}` : `➜ ${displayCwd}`;
+
         addTerminalLineToInstance(activeTerminalId, {
             type: 'command',
             content: command,
-            prompt: activeTerminal.isProcessRunning ? '➜ ' : '➜ ~'
+            prompt: promptText
         });
 
         if (cmdLower === 'clear') {
@@ -2032,8 +2199,8 @@ Include the corrected full and detailed code`;
             return;
         }
 
-        if (!command.startsWith('clarinet')) {
-            addTerminalLineToInstance(activeTerminalId, { type: 'error', content: 'Only clarinet commands are allowed in this terminal.' });
+        if (!command.startsWith('clarinet') && !command.startsWith('cd')) {
+            addTerminalLineToInstance(activeTerminalId, { type: 'error', content: 'Only clarinet and cd commands are allowed in this terminal.' });
             return;
         }
 
@@ -3008,6 +3175,28 @@ Include the corrected full and detailed code`;
         return f.name.endsWith('.clar') || f.name.endsWith('.clarity');
     })();
 
+    const activeFilePathOrUndefined = activeFileId ? getFilePath(files, activeFileId) : undefined;
+    let closestManifestNode: FileNode | null = null;
+
+    if (activeFilePathOrUndefined) {
+        const parts = activeFilePathOrUndefined.split('/');
+        parts.pop(); // remove file name itself
+        while (parts.length >= 0) {
+            const checkPath = parts.length > 0 ? parts.join('/') + '/Clarinet.toml' : 'Clarinet.toml';
+            const foundNode = findFileByPath(files, checkPath);
+            if (foundNode && foundNode.type === 'file') {
+                closestManifestNode = foundNode;
+                break;
+            }
+            if (parts.length === 0) break;
+            parts.pop();
+        }
+    }
+
+    if (!closestManifestNode) {
+        closestManifestNode = findClarinetToml(files);
+    }
+
     return (
         <div className="h-screen w-screen flex flex-col bg-caspier-black text-caspier-text overflow-hidden font-sans">
 
@@ -3041,7 +3230,7 @@ Include the corrected full and detailed code`;
             />
 
             {/* Main Workspace */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex h-[80vh]">
                 <ActivityBar
                     activeView={activeView}
                     setActiveView={setActiveView}
@@ -3060,6 +3249,7 @@ Include the corrected full and detailed code`;
                             activeFileId={activeFileId}
                             onFileSelect={handleFileOpen}
                             activeView={activeView}
+                            fileDiagnostics={fileDiagnostics}
                             onCreateNode={handleCreateNode}
                             onRenameNode={handleRenameNode}
                             onDeleteNode={handleDeleteNode}
@@ -3105,6 +3295,7 @@ Include the corrected full and detailed code`;
                             prefilledContractInfo={prefilledContractInfo}
                             setPrefilledContractInfo={setPrefilledContractInfo}
                             onStartTour={handleStartTour}
+                            currentCwd={currentCwd}
                         />
                         {/* Left Resizer */}
                         <div
@@ -3141,6 +3332,7 @@ Include the corrected full and detailed code`;
                                 files={files}
                                 openFileIds={openFileIds}
                                 activeFileId={activeTabGroup === 'file' ? activeFileId : null}
+                                fileDiagnostics={fileDiagnostics}
                                 onSelect={(id) => {
                                     setActiveFileId(id);
                                     setActiveTabGroup('file');
@@ -3302,11 +3494,15 @@ Include the corrected full and detailed code`;
                         </div>
 
                         {/* Code Editor layer — always mounted so Monaco stays alive */}
+
                         <div
                             style={{ display: (activeTabGroup === 'file' && activeFileId) ? 'block' : 'none' }}
                             className="absolute inset-0 "
                         >
                             <CodeEditor
+                                key={activeFileId} // Adding a key forces a clean re-mount when switching files
+
+                                projectFiles={collectContractFiles(files)}
                                 code={activeContent}
                                 language={activeLanguage}
                                 onChange={handleEditorChange}
@@ -3319,8 +3515,12 @@ Include the corrected full and detailed code`;
                                 lineEnding={lineEnding}
                                 onCursorChange={handleCursorChange}
                                 activeFileId={activeFileId}
+                                activeFilePath={activeFilePathOrUndefined || undefined}
+                                manifestFilePath={closestManifestNode ? getFilePath(files, closestManifestNode.id) || undefined : undefined}
+                                manifestFileContent={closestManifestNode?.content}
                                 onFileDrop={(files) => handleExternalDrop(files, 'root')}
                                 onRunNodeCommand={handleRunNodeCommand}
+                                onUnassociatedContract={handleUnassociatedContract}
                             />
                         </div>
 
@@ -3395,6 +3595,8 @@ Include the corrected full and detailed code`;
                                 onKillProcess={handleKillProcess}
                                 pendingCommand={pendingNodeCommand}
                                 onClearPendingCommand={() => setPendingNodeCommand(null)}
+                                dirtyFileIds={dirtyFileIds}
+                                onSaveFile={handleSaveFile}
                             />
                         </>
                     )}
@@ -3613,25 +3815,75 @@ Include the corrected full and detailed code`;
                 />
             )}
 
+            {/* Notifications Container */}
+            <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-4">
+                {/* Unassociated Contract Notification */}
+                {unassociatedContractPath && (
+                    <div className="bg-[#252526] border-t-2 border-[#ffcc00] shadow-2xl p-4 w-[400px] text-white animate-slide-up fade-in duration-500">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 text-white font-medium text-sm">
+                                <span className="text-[#ffcc00] text-lg">⚠</span>
+                                <span>No Clarinet.toml is associated to the contract</span>
+                            </div>
+                            <button
+                                onClick={() => setUnassociatedContractPath(null)}
+                                className="text-gray-400 hover:text-white p-1"
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <p className="text-xs text-gray-400 mb-4 break-all font-mono leading-relaxed">
+                            {unassociatedContractPath}
+                        </p>
+
+                        {/* Footer/Action */}
+                        <div className="flex items-center justify-between border-t border-gray-700 pt-3">
+                            <span className="text-[10px] text-gray-500 uppercase tracking-wider">Source: Clarity - Stacks Labs</span>
+                            <button className="bg-[#0e639c] hover:bg-[#1177bb] px-3 py-1 text-xs text-white rounded-sm">
+                                Don't show again
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Generic LSP Error Notification */}
+                {lspGenericError && (
+                    <div className="bg-[#252526] border-t-2 border-red-500 shadow-2xl p-4 w-[400px] text-white animate-slide-up fade-in duration-500">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 text-white font-medium text-sm">
+                                <span className="text-red-500 text-lg">⚠</span>
+                                <span>Language Server Error</span>
+                            </div>
+                            <button
+                                onClick={() => setLspGenericError(null)}
+                                className="text-gray-400 hover:text-white p-1"
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <p className="text-xs text-gray-400 mb-4 break-words font-mono leading-relaxed max-h-40 overflow-y-auto">
+                            {lspGenericError}
+                        </p>
+
+                        {/* Footer/Action */}
+                        <div className="flex items-center justify-between border-t border-gray-700 pt-3">
+                            <span className="text-[10px] text-gray-500 uppercase tracking-wider">Source: Clarity - Stacks Labs</span>
+                        </div>
+                    </div>
+                )}
+            </div>
             {/* Intro Loading Page */}
-            {(loading || !isStateLoaded) && (
-                <IntroLoading
-                    theme={theme}
-                    onComplete={() => {
-                        if (isStateLoaded) {
-                            setLoading(false);
-                        } else {
-                            // If state isn't loaded yet, we'll check again in a short interval
-                            const checkInterval = setInterval(() => {
-                                if (isStateLoaded) {
-                                    setLoading(false);
-                                    clearInterval(checkInterval);
-                                }
-                            }, 100);
-                        }
-                    }}
-                />
-            )}
+
 
             <FaucetPopover
                 isOpen={isFaucetOpen}

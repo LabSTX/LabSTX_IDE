@@ -39,6 +39,7 @@
     "lucide-react": "^1.7.0",
     "monaco-editor": "^0.45.0",
     "monaco-editor-textmate": "^4.0.0",
+    "onigasm": "^2.2.5",
     "monaco-languageclient": "^10.7.0",
     "multer": "^2.0.2",
     "node-fetch": "^2.7.0",
@@ -55,6 +56,8 @@
     "vscode-languageserver-textdocument": "^1.0.12",
     "vscode-languageserver-types": "^3.17.5",
     "vscode-oniguruma": "^2.0.1",
+    "vscode-ws-jsonrpc": "^3.3.2",
+    "@codingame/monaco-vscode-api": "3.2.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-web-links": "^0.9.0"

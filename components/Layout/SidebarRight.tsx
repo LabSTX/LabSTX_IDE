@@ -285,7 +285,7 @@ const GitHubLoginRequired: React.FC<{ theme: 'dark' | 'light', onLogin: () => vo
 
 const AssistantEmptyState: React.FC<{ theme: 'dark' | 'light' }> = ({ theme }) => {
     return (
-        <div className="flex flex-col items-center justify-center h-full px-6 text-center animate-in fade-in zoom-in duration-700">
+        <div className="flex flex-col items-center justify-center h-full px-6 text-center animate-in fade-in zoom-in duration-700 bg-gradient-to-br from-indigo-500/10 via-transparent to-purple-500/10">
             <div className="relative mb-8 group">
                 <div className="absolute -inset-4  rounded-full  group-hover:bg-caspier-text/20 transition-all duration-500" />
                 {theme === 'dark' ? (
@@ -309,7 +309,7 @@ const AssistantEmptyState: React.FC<{ theme: 'dark' | 'light' }> = ({ theme }) =
             <p className="text-sm text-caspier-muted leading-relaxed max-w-[280px]">
                 Your expert companion for building secure and efficient Clarity smart contracts on Stacks.
             </p>
-            <div className="mt-8 grid grid-cols-2 gap-3 w-full max-w-[320px]">
+            <div className="hidden mt-8 grid grid-cols-2 gap-3 w-full max-w-[320px]">
                 <div className="p-3 rounded-lg border border-caspier-border bg-caspier-panel/30 text-left">
                     <div className="text-caspier-text font-semibold text-xs mb-1">Edit Mode</div>
                     <div className="text-caspier-muted text-[10px]">Directly modify and create files in your workspace.</div>
@@ -758,12 +758,11 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
         <div id="ai-assistant-sidebar" style={{ width }} className="flex-shrink-0  bg-caspier-black border-l border-caspier-border flex flex-col h-full relative ">
             <div className={`flex flex-col h-full transition-all duration-500 ${!wallet.connected ? 'blur-md pointer-events-none select-none opacity-50' : ''}`}>
                 {/* Header */}
-                <div className="h-14 px-4 flex items-center justify-between text-blue-600 bg-blue-300/20 dark:bg-caspier-panel border-b border-caspier-border z-20">
+                <div className="h-14 px-4 flex items-center justify-between text-blue-600 dark:bg-caspier-panel border-b border-caspier-border z-20">
                     <div className="flex items-center gap-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="lucide lucide-sparkles-icon lucide-sparkles"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>
-
+                      
                         <div>
-                            <h2 className="text-sm font-semibold ">LabSTX AI</h2>
+                         
                             <div className="flex items-center gap-1.5 overflow-hidden">
                                 <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
                                 <span className="text-xs text-caspier-muted truncate">
@@ -850,10 +849,7 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
                     <div className="p-4 bg-caspier-black/80 backdrop-blur-md border-t border-caspier-border/50">
                         <div className="relative">
                             {/* Quick Prompts */}
-                            {messages.length === 0 && !loading && !mentionQuery && (
-                                <QuickPrompts onSelect={(prompt) => handleSend(prompt)} />
-                            )}
-
+                       
                             {/* Mention Popup */}
                             {mentionQuery !== null && filteredFiles.length > 0 && !isInputMinimized && (
                                 <div className="absolute bottom-full left-0 right-0 mb-2 bg-caspier-panel border border-caspier-border rounded-lg shadow-xl overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200">
@@ -876,7 +872,7 @@ const SidebarRight = React.forwardRef<SidebarRightHandle, SidebarRightProps>(({ 
                                 </div>
                             )}
 
-                            <div className={`flex flex-col bg-caspier-dark/40 border border-caspier-border/50 rounded-xl overflow-hidden focus-within:border-caspier-text/30 focus-within:ring-1 focus-within:ring-caspier-text/10 transition-all duration-300 ${isInputMinimized ? 'h-10' : ''}`}>
+                            <div className={`flex flex-col bg-caspier-dark/40 border border-caspier-border/50 overflow-hidden focus-within:border-caspier-text/30 focus-within:ring-1 focus-within:ring-caspier-text/10 transition-all duration-300 ${isInputMinimized ? 'h-10' : ''}`}>
                                 {!isInputMinimized ? (
                                     <>
                                         <textarea

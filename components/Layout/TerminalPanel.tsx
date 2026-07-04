@@ -6,7 +6,196 @@ import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import 'xterm/css/xterm.css';
 import { webContainerService } from '../../services/webContainerService';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, ChevronRight } from 'lucide-react';
+
+// Clarinet Commands Database
+const CLARINET_COMMANDS = [
+    // --- Initialize a new project ---
+    {
+        name: 'clarinet new',
+        usage: 'clarinet new [OPTIONS] <NAME>',
+        description: 'Creates a new project with all necessary configuration files and directory structure.',
+        options: [
+            { flag: '--disable-telemetry', description: 'Do not provide developer usage telemetry for this project' }
+        ]
+    },
+
+    // --- Manage your contracts ---
+    {
+        name: 'clarinet contracts new',
+        usage: 'clarinet contracts new <COMMAND> <OPTIONS>',
+        description: 'Generate files and settings for a new contract.'
+    },
+    {
+        name: 'clarinet contracts rm',
+        usage: 'clarinet contracts rm <COMMAND> <OPTIONS>',
+        description: 'Remove files and settings for a contract.',
+        options: [
+            { flag: '--manifest-path <path>', description: 'Path to Clarinet.toml' }
+        ]
+    },
+
+    // --- Validate your contracts ---
+    {
+        name: 'clarinet check',
+        usage: 'clarinet check [FILE] [OPTIONS]',
+        description: 'Checks contracts syntax and performs type checking.',
+        options: [
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml' },
+            { flag: '--deployment-plan-path <path>', short: '-p', description: 'If specified, use this deployment file' },
+            { flag: '--use-on-disk-deployment-plan', short: '-d', description: 'Use on disk deployment plan (prevent updates computing)' },
+            { flag: '--use-computed-deployment-plan', short: '-c', description: 'Use computed deployment plan (will overwrite on disk version if any update)' },
+            { flag: '--enable-clarity-wasm', description: 'Allow the Clarity Wasm preview to run in parallel with the Clarity interpreter (beta)' }
+        ]
+    },
+
+    // --- Interact with your contracts in a local REPL ---
+    {
+        name: 'clarinet console',
+        usage: 'clarinet console [OPTIONS]',
+        description: 'Loads contracts in a REPL for an interactive session.',
+        options: [
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml' },
+            { flag: '--deployment-plan-path <path>', short: '-p', description: 'If specified, use this deployment file' },
+            { flag: '--use-on-disk-deployment-plan', short: '-d', description: 'Use on disk deployment plan (prevent updates computing)' },
+            { flag: '--use-computed-deployment-plan', short: '-c', description: 'Use computed deployment plan (will overwrite on disk version if any update)' },
+            { flag: '--enable-remote-data', short: '-r', description: 'Enable remote data fetching from mainnet or a testnet' },
+            { flag: '--remote-data-api-url <url>', short: '-a', description: 'Set a custom Stacks Blockchain API URL for remote data fetching' },
+            { flag: '--remote-data-initial-height <height>', short: '-b', description: 'Initial remote Stacks block height' },
+            { flag: '--enable-clarity-wasm', description: 'Allow the Clarity Wasm preview to run in parallel with the Clarity interpreter (beta)' }
+        ],
+        repl_commands: [
+            '::help', '::functions', '::keywords', '::describe', '::toggle_costs', '::toggle_timings', 
+            '::mint_stx', '::set_tx_sender', '::get_assets_maps', '::get_contracts', '::get_block_height', 
+            '::advance_chain_tip', '::advance_stacks_chain_tip', '::advance_burn_chain_tip', '::set_epoch', 
+            '::get_epoch', '::debug', '::trace', '::get_costs', '::reload', '::read', '::encode', '::decode'
+        ]
+    },
+
+    // --- Start a local development network ---
+    {
+        name: 'clarinet devnet start',
+        usage: 'clarinet devnet start [OPTIONS]',
+        description: 'Start a local Devnet network for interacting with your contracts.',
+        options: [
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml' },
+            { flag: '--no-dashboard', description: 'Display streams of logs instead of terminal UI dashboard' },
+            { flag: '--deployment-plan-path <path>', short: '-p', description: 'If specified, use this deployment file' },
+            { flag: '--use-on-disk-deployment-plan', short: '-d', description: 'Use on disk deployment plan (prevent updates computing)' },
+            { flag: '--use-computed-deployment-plan', short: '-c', description: 'Use computed deployment plan (will overwrite on disk version if any update)' },
+            { flag: '--package <path>', description: "Path to Package.json produced by 'clarinet devnet package'" }
+        ]
+    },
+    {
+        name: 'clarinet devnet package',
+        usage: 'clarinet devnet package [OPTIONS]',
+        description: 'Generate package of all required devnet artifacts.',
+        options: [
+            { flag: '--name <name>', short: '-n', description: 'Output json file name' },
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml' }
+        ]
+    },
+
+    // --- Manage your deployments ---
+    {
+        name: 'clarinet deployments check',
+        usage: 'clarinet deployments check [OPTIONS]',
+        description: 'Check deployments format.',
+        options: [
+            { flag: '--manifest-path <path>', description: 'Path to Clarinet.toml' }
+        ]
+    },
+    {
+        name: 'clarinet deployments generate',
+        usage: 'clarinet deployments generate [OPTIONS]',
+        description: 'Generate new deployment.',
+        options: [
+            { flag: '--simnet', description: 'Generate a deployment file for simnet environments (console, tests)' },
+            { flag: '--devnet', description: 'Generate a deployment file for devnet, using settings/Devnet.toml' },
+            { flag: '--testnet', description: 'Generate a deployment file for testnet, using settings/Testnet.toml' },
+            { flag: '--mainnet', description: 'Generate a deployment file for mainnet, using settings/Mainnet.toml' },
+            { flag: '--manifest-path <path>', description: 'Path to Clarinet.toml' },
+            { flag: '--no-batch', description: 'Generate a deployment file without trying to batch transactions (simnet only)' },
+            { flag: '--low-cost', description: 'Compute and set cost, using low priority (network connection required)' },
+            { flag: '--medium-cost', description: 'Compute and set cost, using medium priority (network connection required)' },
+            { flag: '--high-cost', description: 'Compute and set cost, using high priority (network connection required)' },
+            { flag: '--manual-cost', description: 'Leave cost estimation manual' }
+        ]
+    },
+    {
+        name: 'clarinet deployments apply',
+        usage: 'clarinet deployments apply [OPTIONS]',
+        description: 'Apply deployment.',
+        options: [
+            { flag: '--devnet', description: 'Apply default deployment settings/default.devnet-plan.toml' },
+            { flag: '--testnet', description: 'Apply default deployment settings/default.testnet-plan.toml' },
+            { flag: '--mainnet', description: 'Apply default deployment settings/default.mainnet-plan.toml' },
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml' },
+            { flag: '--deployment-plan-path <path>', short: '-p', description: 'Apply deployment plan specified' },
+            { flag: '--no-dashboard', description: 'Display streams of logs instead of terminal UI dashboard' },
+            { flag: '--use-on-disk-deployment-plan', short: '-d', description: 'Use on disk deployment plan (prevent updates computing)' },
+            { flag: '--use-computed-deployment-plan', short: '-c', description: 'Use computed deployment plan (will overwrite on disk version if any update)' }
+        ]
+    },
+
+    // --- Interact with Mainnet contracts ---
+    {
+        name: 'clarinet requirements add',
+        usage: 'clarinet requirements <COMMAND>',
+        description: 'Add a mainnet contract as a dependency to your project.',
+        options: [
+            { flag: '--manifest-path <path>', description: 'Path to Clarinet.toml' }
+        ]
+    },
+
+    // --- Editor Integrations & Debugging ---
+    {
+        name: 'clarinet lsp',
+        usage: 'clarinet lsp',
+        description: 'Starts the Language Server Protocol service for Clarity, enabling intelligent code completion, error highlighting, and other IDE features in supported editors.'
+    },
+    {
+        name: 'clarinet dap',
+        usage: 'clarinet dap',
+        description: 'Starts the Debug Adapter Protocol service, enabling debugging features like breakpoints, step-through execution, and variable inspection in supported editors.'
+    },
+
+    // --- Format your code ---
+    {
+        name: 'clarinet format',
+        usage: 'clarinet format [OPTIONS]',
+        description: 'Formats Clarity code files according to standard conventions.',
+        options: [
+            { flag: '--check', description: 'Check if code is formatted without modifying files', required: false },
+            { flag: '--dry-run', description: 'Only echo the result of formatting', required: false },
+            { flag: '--in-place', description: 'Replace the contents of a file with the formatted code', required: false },
+            { flag: '--manifest-path <path>', short: '-m', description: 'Path to Clarinet.toml', required: false },
+            { flag: '--file <file>', short: '-f', description: 'If specified, format only this file', required: false },
+            { flag: '--max-line-length <length>', short: '-l', description: 'Maximum line length', required: false },
+            { flag: '--indent <size>', short: '-i', description: 'Indentation size, e.g. 2', required: false },
+            { flag: '--tabs', short: '-t', description: 'Use tabs instead of spaces', required: false }
+        ]
+    },
+
+    // --- Utilities ---
+    {
+        name: 'clarinet completions',
+        usage: 'clarinet completions <SHELL>',
+        description: 'Generates shell completion scripts for your shell.',
+        supported_shells: ['bash', 'zsh', 'fish', 'powershell', 'elvish'],
+        options: [
+            { flag: '--shell <shell>', short: '-s', description: 'Specify which shell to generation completions script for' }
+        ]
+    },
+
+    // --- Environment Variables ---
+    {
+        name: 'CLARINET_MANIFEST_PATH',
+        type: 'Environment Variable',
+        description: 'Specifies the path to the Clarinet.toml project file.',
+        example: 'export CLARINET_MANIFEST_PATH=/path/to/project'
+    }
+];
 
 interface TerminalPanelProps {
     terminals: TerminalInstance[];
@@ -28,6 +217,8 @@ interface TerminalPanelProps {
     onKillProcess?: (id: string) => void;
     pendingCommand?: { command: string, terminalId: string, timestamp: number } | null;
     onClearPendingCommand?: () => void;
+    dirtyFileIds?: string[];
+    onSaveFile?: () => void;
 }
 
 type TerminalTab = 'TERMINAL' | 'OUTPUT' | 'PROBLEMS' | 'PROCESSES';
@@ -175,7 +366,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
     onMaximize,
     onKillProcess,
     pendingCommand,
-    onClearPendingCommand
+    onClearPendingCommand,
+    dirtyFileIds = [],
+    onSaveFile
 }) => {
     const [activeTab, setActiveTab] = useState<TerminalTab>('TERMINAL');
     const lastCommandTimestamp = useRef<number>(0);
@@ -187,6 +380,15 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [copiedAll, setCopiedAll] = useState(false);
     const [isTabsCollapsed, setIsTabsCollapsed] = useState(false);
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+    const [pendingCommandToExecute, setPendingCommandToExecute] = useState<string | null>(null);
+    
+    // Autocomplete state
+    const [showAutocomplete, setShowAutocomplete] = useState(false);
+    const [filteredCommands, setFilteredCommands] = useState<typeof CLARINET_COMMANDS>([]);
+    const [selectedCommandIndex, setSelectedCommandIndex] = useState(-1);
+    const [expandedCommandDescriptions, setExpandedCommandDescriptions] = useState<Record<string, boolean>>({});
+    const autocompleteRef = useRef<HTMLDivElement>(null);
 
     const activeTerminal = terminals.find(t => t.id === activeTerminalId) || terminals[0];
 
@@ -214,6 +416,34 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
         scrollToBottom();
     }, [activeTerminal.lines, activeTab]);
 
+    // Handle clicking outside autocomplete
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+                const input = document.getElementById('terminal-input');
+                if (!input?.contains(event.target as Node)) {
+                    setShowAutocomplete(false);
+                }
+            }
+        };
+
+        if (showAutocomplete) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showAutocomplete]);
+
+    // Scroll selected autocomplete item into view
+    useEffect(() => {
+        if (showAutocomplete && autocompleteRef.current && selectedCommandIndex >= 0) {
+            const items = autocompleteRef.current.querySelectorAll('[class*="border-b"]');
+            const selectedItem = items[selectedCommandIndex] as HTMLElement;
+            if (selectedItem) {
+                selectedItem.scrollIntoView({ block: 'nearest' });
+            }
+        }
+    }, [selectedCommandIndex, showAutocomplete]);
+
     const getTabIcon = (tab: TerminalTab) => {
         switch (tab) {
             case 'TERMINAL': return <TerminalIcon className="w-3.5 h-3.5" />;
@@ -226,7 +456,21 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const cmd = inputValue.trim();
-        if (cmd && onCommand) {
+        if (cmd) {
+            // Check if there are dirty files
+            if (dirtyFileIds && dirtyFileIds.length > 0) {
+                // Show dialog instead of executing immediately
+                setPendingCommandToExecute(cmd);
+                setShowUnsavedDialog(true);
+            } else {
+                // No dirty files, execute command immediately
+                executeCommand(cmd);
+            }
+        }
+    };
+
+    const executeCommand = (cmd: string) => {
+        if (onCommand) {
             onCommand(cmd);
             setCommandHistory(prev => {
                 const newHistory = [cmd, ...prev.filter(c => c !== cmd)].slice(0, 50);
@@ -238,12 +482,130 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
         }
     };
 
+    const handleSaveAndContinue = () => {
+        setShowUnsavedDialog(false);
+        // Save the files first
+        if (onSaveFile) {
+            onSaveFile();
+        }
+        // Execute the command after a short delay to ensure save completes
+        if (pendingCommandToExecute) {
+            setTimeout(() => {
+                executeCommand(pendingCommandToExecute);
+                setPendingCommandToExecute(null);
+            }, 100);
+        }
+    };
+
+    const handleDiscardAndContinue = () => {
+        setShowUnsavedDialog(false);
+        if (pendingCommandToExecute) {
+            executeCommand(pendingCommandToExecute);
+            setPendingCommandToExecute(null);
+        }
+    };
+
+    const handleCancelCommand = () => {
+        setShowUnsavedDialog(false);
+        setPendingCommandToExecute(null);
+    };
+
+    const filterAutocompleteCommands = (input: string) => {
+        if (!input.trim()) {
+            setShowAutocomplete(false);
+            setFilteredCommands([]);
+            setSelectedCommandIndex(-1);
+            return;
+        }
+
+        const lowerInput = input.toLowerCase().trim();
+        
+        // Filter commands by name match (substring search)
+        const filtered = CLARINET_COMMANDS.filter(cmd => 
+            cmd.name.toLowerCase().includes(lowerInput)
+        );
+
+        // Show autocomplete if we have matches and input looks like a clarinet command
+        // (starts with 'c', contains 'clar', or is a known command word)
+        if (filtered.length > 0) {
+            const isClarinet = lowerInput.length >= 1 && (
+                lowerInput.startsWith('c') ||
+                lowerInput.includes('clar') ||
+                lowerInput.includes('check') ||
+                lowerInput.includes('console') ||
+                lowerInput.includes('deploy') ||
+                lowerInput.includes('test') ||
+                lowerInput.includes('new') ||
+                lowerInput.includes('format') ||
+                lowerInput.includes('devnet') ||
+                lowerInput.includes('lsp') ||
+                lowerInput.includes('dap') ||
+                lowerInput.includes('requirement') ||
+                lowerInput.includes('contract')
+            );
+
+            if (isClarinet) {
+                setShowAutocomplete(true);
+                setFilteredCommands(filtered);
+                setSelectedCommandIndex(0);
+            } else {
+                setShowAutocomplete(false);
+                setFilteredCommands([]);
+                setSelectedCommandIndex(-1);
+            }
+        } else {
+            setShowAutocomplete(false);
+            setFilteredCommands([]);
+            setSelectedCommandIndex(-1);
+        }
+    };
+
+    const selectAutocompleteCommand = (commandName: string) => {
+        setInputValue(commandName);
+        setShowAutocomplete(false);
+        setFilteredCommands([]);
+        setSelectedCommandIndex(-1);
+    };
+
+    const toggleCommandDescription = (commandName: string) => {
+        setExpandedCommandDescriptions(prev => ({
+            ...prev,
+            [commandName]: !prev[commandName]
+        }));
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'c' && e.ctrlKey && activeTerminal.isProcessRunning && onKillProcess) {
             e.preventDefault();
             onKillProcess(activeTerminalId);
             return;
         }
+
+        // Autocomplete navigation
+        if (showAutocomplete && filteredCommands.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedCommandIndex(prev => 
+                    prev < filteredCommands.length - 1 ? prev + 1 : prev
+                );
+                return;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedCommandIndex(prev => prev > 0 ? prev - 1 : -1);
+                return;
+            } else if (e.key === 'Enter' && selectedCommandIndex >= 0) {
+                e.preventDefault();
+                const selectedCommand = filteredCommands[selectedCommandIndex];
+                selectAutocompleteCommand(selectedCommand.name);
+                return;
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setShowAutocomplete(false);
+                return;
+            }
+        }
+
+        // Command history navigation
         if (e.key === 'ArrowUp') {
             e.preventDefault();
             if (historyIndex === -1) {
@@ -501,22 +863,28 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
                         />
                     ))}
 
-                    <form onSubmit={handleSubmit} className="flex gap-2 items-center mt-2 group">
+                    <form onSubmit={handleSubmit} className="flex gap-2 items-center mt-2 group relative">
                         <span className="text-caspier-red font-bold shrink-0">{activeTerminal.isProcessRunning ? `${activeTerminal.title} >>` : '➜  ~'}</span>
-                        <input
-                            id="terminal-input"
-                            type="text"
-                            value={inputValue}
-                            onChange={(e) => {
-                                setInputValue(e.target.value);
-                                if (historyIndex === -1) setDraftInput(e.target.value);
-                            }}
-                            onKeyDown={handleKeyDown}
-                            className="flex-1 bg-transparent border-none outline-none text-caspier-text font-mono text-xs p-0 focus:ring-0"
-                            placeholder={activeTerminal.isProcessRunning ? `` : `Type 'clarinet ...' for local dev tools`}
-                            autoComplete="off"
-                            autoFocus
-                        />
+                        <div className="flex-1 relative">
+                            <input
+                                id="terminal-input"
+                                type="text"
+                                value={inputValue}
+                                onChange={(e) => {
+                                    setInputValue(e.target.value);
+                                    if (historyIndex === -1) setDraftInput(e.target.value);
+                                    filterAutocompleteCommands(e.target.value);
+                                }}
+                                onKeyDown={handleKeyDown}
+                                className="flex-1 w-full bg-transparent border-none outline-none text-caspier-text font-mono text-xs p-0 focus:ring-0"
+                                placeholder={activeTerminal.isProcessRunning ? `` : `Type 'clarinet ...' for local dev tools`}
+                                autoComplete="off"
+                                autoFocus
+                            />
+                            
+                            {/* Autocomplete Dropdown */}
+                          
+                        </div>
                         {activeTerminal.isProcessRunning && onKillProcess && (
                             <button
                                 type="button"
@@ -786,6 +1154,59 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
             {activeTab === 'OUTPUT' && renderOutput()}
             {activeTab === 'PROBLEMS' && renderProblems()}
             {activeTab === 'PROCESSES' && renderProcesses()}
+
+            {/* Unsaved Files Dialog */}
+            {showUnsavedDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in duration-200">
+                    <div className="bg-caspier-panel border border-caspier-border rounded-lg shadow-xl max-w-md w-11/12 animate-in scale-in duration-200">
+                        <div className="p-6 space-y-4">
+                            <div className="flex items-start gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-labstx-orange/20 border border-labstx-orange/40 flex items-center justify-center shrink-0">
+                                    <span className="text-labstx-orange text-xl font-bold">!</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-base font-bold text-caspier-text mb-1">Unsaved Files Detected</h3>
+                                    <p className="text-[10px] text-caspier-muted">
+                                        You have <span className="font-semibold text-labstx-orange">{dirtyFileIds?.length || 0} file{dirtyFileIds?.length !== 1 ? 's' : ''}</span> with unsaved changes.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-caspier-dark/50 border border-caspier-border rounded p-3">
+                                <p className="text-xs text-caspier-muted font-mono mb-2 uppercase font-bold opacity-70">Pending Command:</p>
+                                <p className="text-[10px] font-mono text-blue-400 break-all">
+                                    {pendingCommandToExecute}
+                                </p>
+                            </div>
+
+                            <p className="text-[10px] text-caspier-muted">
+                                Would you like to save your changes before executing this command?
+                            </p>
+
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={handleCancelCommand}
+                                    className="flex px-4 py-2 rounded-lg border border-caspier-border text-caspier-text hover:bg-caspier-hover transition-colors text-[10px] font-bold uppercase tracking-wider"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDiscardAndContinue}
+                                    className="flex px-4 py-2 rounded-lg bg-caspier-dark/50 border border-caspier-border text-caspier-text hover:bg-caspier-dark transition-colors text-[10px] font-bold uppercase tracking-wider"
+                                >
+                                    Discard & Continue
+                                </button>
+                                <button
+                                    onClick={handleSaveAndContinue}
+                                    className="flex px-4 py-2 rounded-lg bg-labstx-orange/20 border border-labstx-orange/40 text-labstx-orange hover:bg-labstx-orange/30 transition-colors text-[10px] font-bold uppercase tracking-wider"
+                                >
+                                    Save & Continue
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -6,6 +6,13 @@ import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig(({ mode }) => {
+  optimizeDeps: {
+    include: [
+      'vscode-languageclient/browser',
+      'vscode-languageserver-types',
+      'monaco-languageclient'
+    ]
+  }
   const env = loadEnv(mode, '.', '');
   return {
     server: {
@@ -90,6 +97,12 @@ export default defineConfig(({ mode }) => {
       wasm(),
       topLevelAwait()
     ],
+    worker: {
+      plugins: [
+        wasm(),
+        topLevelAwait()
+      ]
+    },
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
