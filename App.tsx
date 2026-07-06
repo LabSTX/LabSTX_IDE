@@ -274,8 +274,10 @@ function App() {
     const [problems, setProblems] = useState<Problem[]>([]);
 
     // File Diagnostics State
-    const [fileDiagnostics, setFileDiagnostics] = useState<Record<string, { errors: number, warnings: number }>>({});
-    
+    const [fileDiagnostics, setFileDiagnostics] = useState<Record<string, {
+        infos: number; hints: number; errors: number, warnings: number
+    }>>({});
+
     const findIdByPath = useCallback((nodes: FileNode[], targetPath: string, currentPath = ''): string | null => {
         const targetLower = targetPath.toLowerCase();
         for (const node of nodes) {
@@ -298,36 +300,56 @@ function App() {
         const handleLspDiagnostics = (e: Event) => {
             const customEvent = e as CustomEvent;
             const { uri, diagnostics } = customEvent.detail;
+
             let path = uri.replace(/^file:\/+/i, '');
-            try { path = decodeURIComponent(path); } catch (e) {}
+            try { path = decodeURIComponent(path); } catch (e) { }
+
             const id = findIdByPath(filesRef.current, path);
             console.log(`[Diagnostics Debug] handleLspDiagnostics: uri=${uri}, path=${path}, foundId=${id}, diagnosticsCount=${diagnostics.length}`);
+
             if (!id) return;
 
             let errors = 0;
             let warnings = 0;
+            let infos = 0; // Added for blue severities
+            let hints = 0; // Added for subtle hints
+
             for (const d of diagnostics) {
                 if (d.severity === 1) errors++;
                 else if (d.severity === 2) warnings++;
+                else if (d.severity === 3) infos++; // 🔵 Blue
+                else if (d.severity === 4) hints++; // ⚪ Grey
             }
 
             setFileDiagnostics(prev => {
-                if (errors === 0 && warnings === 0) {
+                // Check if file is completely clean
+                if (errors === 0 && warnings === 0 && infos === 0 && hints === 0) {
                     if (!prev[id]) return prev;
                     const next = { ...prev };
                     delete next[id];
                     return next;
                 }
+
                 const existing = prev[id];
-                if (existing && existing.errors === errors && existing.warnings === warnings) {
-                    return prev; // No change
+
+                // Check if nothing has changed to avoid unnecessary re-renders
+                if (
+                    existing &&
+                    existing.errors === errors &&
+                    existing.warnings === warnings &&
+                    existing.infos === infos &&
+                    existing.hints === hints
+                ) {
+                    return prev;
                 }
+
                 return {
                     ...prev,
-                    [id]: { errors, warnings }
+                    [id]: { errors, warnings, infos, hints }
                 };
             });
         };
+
         window.addEventListener('clarityLspDiagnostics', handleLspDiagnostics);
         return () => window.removeEventListener('clarityLspDiagnostics', handleLspDiagnostics);
     }, [findIdByPath]);
@@ -3567,6 +3589,7 @@ Include the corrected full and detailed code`;
                                 Debug Code with AI
                             </button>
                         </div>
+
                     )}
                     {isTerminalVisible && (
                         <>
@@ -3679,7 +3702,7 @@ Include the corrected full and detailed code`;
                         href="https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:underline cursor-pointer flex items-center gap-1 text-black border border-white/30 px-2 py-0.5  bg-green-500 hover:bg-green-600 transition-all mr-2"
+                        className="hidden hover:underline cursor-pointer flex items-center gap-1 text-black border border-white/30 px-2 py-0.5  bg-green-500 hover:bg-green-600 transition-all mr-2"
                     >
                         ✨ Join Early Access
                     </a>

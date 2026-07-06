@@ -52,7 +52,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         href="https://docs.google.com/forms/d/e/1FAIpQLSegIYqoTgB6U9s-cQDsx_Csf2b8Jfa3JJ8jz8EcrJg1oGssIg/viewform"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex items-center justify-between px-4 py-2 rounded-full border border-blue-500/20 transition-all text-left"
+                        className="hidden group flex items-center justify-between px-4 py-2 rounded-full border border-blue-500/20 transition-all text-left"
                     >
                         <div className="flex flex-col">
                             <span className="text-xs font-black text-blue-400 uppercase tracking-tighter">

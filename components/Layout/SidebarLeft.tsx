@@ -23,6 +23,14 @@ import ContractPanel from '../ContractPanel/ContractPanel';
 import { DiscoveryImportModal, DiscoveryImportType, StacksNetworkType } from './DiscoveryImportModal';
 import { ArrowUpDown, CircleQuestionMarkIcon, CloudDownloadIcon, InfoIcon } from 'lucide-react';
 
+const sortNodes = (nodes: FileNode[]) => {
+    return [...nodes].sort((a, b) => {
+        if (a.type === 'folder' && b.type !== 'folder') return -1;
+        if (a.type !== 'folder' && b.type === 'folder') return 1;
+        return a.name.localeCompare(b.name);
+    });
+};
+
 
 interface SidebarLeftProps {
     files: FileNode[];
@@ -75,7 +83,7 @@ interface SidebarLeftProps {
     hasClarinet?: boolean;
     onStartTour?: (tourId: string) => void;
     currentCwd?: string;
-    fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
+    fileDiagnostics?: Record<string, { infos: number; hints: number; errors: number; warnings: number; }>;
 }
 
 interface ContextMenuProps {
@@ -190,7 +198,7 @@ interface FileTreeItemProps {
     onMoveNode?: (nodeId: string, targetParentId: string) => void;
     onExternalDrop?: (files: FileList, targetParentId: string) => void;
     onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
-    fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
+    fileDiagnostics?: Record<string, { infos: number; hints: number; errors: number; warnings: number; }>;
 }
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({
@@ -282,24 +290,30 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
         }
     };
 
-    const getFolderDiagnostics = (n: FileNode): { errors: number, warnings: number } => {
+    const getFolderDiagnostics = (n: FileNode): { infos: number; hints: number; errors: number; warnings: number; } => {
         let e = 0;
         let w = 0;
+        let i = 0;
+        let h = 0;
         if (n.type === 'file' && fileDiagnostics?.[n.id]) {
             e += fileDiagnostics[n.id].errors;
             w += fileDiagnostics[n.id].warnings;
+            i += fileDiagnostics[n.id].infos || 0;
+            h += fileDiagnostics[n.id].hints || 0;
         }
         if (n.children) {
             for (const child of n.children) {
                 const res = getFolderDiagnostics(child);
                 e += res.errors;
                 w += res.warnings;
+                i += res.infos;
+                h += res.hints;
             }
         }
-        return { errors: e, warnings: w };
+        return { errors: e, warnings: w, infos: i, hints: h };
     };
 
-    const diag = node.type === 'file' ? (fileDiagnostics?.[node.id] || { errors: 0, warnings: 0 }) : getFolderDiagnostics(node);
+    const diag = node.type === 'file' ? (fileDiagnostics?.[node.id] || { errors: 0, warnings: 0, infos: 0, hints: 0 }) : getFolderDiagnostics(node);
     const hasError = diag.errors > 0;
     const hasWarning = diag.errors === 0 && diag.warnings > 0;
     // const totalCount = diag.errors + diag.warnings;
@@ -351,12 +365,12 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                             />
                         </div>
                     ) : (
-                        <span className={`truncate block ${textDiagnosticClass}`}>{node.name}</span>
+                        <span title={node.id.includes('.clar') ? `Path: ${node.id} \n${node.content.split('\n').length} lines  Errors: ${diag.errors} | Warnings: ${diag.warnings} | Infos: ${diag.infos} | Hints: ${diag.hints}` : ''} className={`truncate block ${textDiagnosticClass}`} >{node.name}</span>
                     )}
                 </div>
 
 
-                {!isRenaming && (diag.errors > 0 || diag.warnings > 0) && (
+                {!isRenaming && (diag.errors > 0 || diag.warnings > 0 || diag.infos > 0 || diag.hints > 0) && (
                     <span className="flex items-center gap-0.5 ml-1 flex-shrink-0">
                         {diag.errors > 0 && (
                             <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-500 leading-none">
@@ -366,6 +380,16 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                         {diag.warnings > 0 && (
                             <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-500 leading-none">
                                 {diag.warnings}
+                            </span>
+                        )}
+                        {diag.infos > 0 && (
+                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-blue-500/20 text-blue-500 leading-none">
+                                {diag.infos + diag.hints}
+                            </span>
+                        )}
+                        {diag.hints > 0 && (
+                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-500 leading-none">
+                                {diag.hints}
                             </span>
                         )}
                     </span>
@@ -444,7 +468,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
                         </div>
                     )}
 
-                    {node.children && node.children.map((child) => (
+                    {node.children && sortNodes(node.children).map((child) => (
                         <FileTreeItem
                             key={child.id}
                             node={child}
@@ -1074,7 +1098,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         </div>
                     )}
 
-                    {files.map(node => (
+                    {sortNodes(files).map(node => (
                         <FileTreeItem
                             key={node.id}
                             node={node}

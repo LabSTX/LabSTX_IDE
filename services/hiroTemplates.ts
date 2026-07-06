@@ -119,33 +119,7 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
     previewPath: 'contracts/nft-marketplace.clar',
     type: 'clarity'
   },
-  {
-    id: 'nft-marketplace-dapp',
-    name: 'NFT Marketplace DApp',
-    description: 'A full-stack demo of an NFT marketplace allowing users to mint, list, and purchase NFTs using STX.',
-    repoUrl: 'https://github.com/hirosystems/platform-template-nft-marketplace-dapp',
-    readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-nft-marketplace-dapp/refs/heads/main/README.md',
-    previewPath: 'contracts/nft-marketplace.clar',
-    type: 'clarity'
-  },
-  {
-    id: 'fundraising-dapp',
-    name: 'Fundraising DApp',
-    description: 'A full-stack decentralized application template for managing fundraising campaigns.',
-    repoUrl: 'https://github.com/hirosystems/platform-template-fundraising-dapp',
-    readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-fundraising-dapp/refs/heads/main/README.md',
-    previewPath: 'contracts/fundraising.clar',
-    type: 'clarity'
-  },
-  {
-    id: 'stacks-wallet',
-    name: 'Stacks Wallet',
-    description: 'A full-stack template comprising a wallet extension, front-end app, and a Clarity contract.',
-    repoUrl: 'https://github.com/hirosystems/platform-template-stacks-wallet',
-    readmeUrl: 'https://raw.githubusercontent.com/hirosystems/platform-template-stacks-wallet/refs/heads/main/README.md',
-    previewPath: 'contracts/stacks-wallet.clar',
-    type: 'clarity'
-  },
+
   {
     id: 'post-conditions',
     name: 'Post Conditions',

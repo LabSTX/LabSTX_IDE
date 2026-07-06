@@ -17,7 +17,9 @@ interface EditorTabsProps {
   dirtyFileIds: string[];
   settings?: ProjectSettings;
   onUpdateSettings?: (key: keyof ProjectSettings, value: any) => void;
-  fileDiagnostics?: Record<string, { errors: number, warnings: number }>;
+  fileDiagnostics?: Record<string, {
+    infos: number; hints: number; errors: number; warnings: number;
+  }>;
 }
 
 const EditorTabs: React.FC<EditorTabsProps> = ({
@@ -183,7 +185,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
         const isDirty = dirtyFileIds.includes(id);
         const isSpecialId = id.startsWith('@');
 
-        const diag = fileDiagnostics?.[id] || { errors: 0, warnings: 0 };
+        const diag = fileDiagnostics?.[id] || { errors: 0, warnings: 0, infos: 0, hints: 0 };
         const hasError = diag.errors > 0;
         const hasWarning = diag.errors === 0 && diag.warnings > 0;
         //  const totalCount = diag.errors + diag.warnings;
@@ -250,7 +252,7 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
               )}
             </span>
 
-            {(diag.errors > 0 || diag.warnings > 0) && (
+            {(diag.errors > 0 || diag.warnings > 0 || diag.infos > 0 || diag.hints > 0) && (
               <span className="flex items-center gap-0.5 flex-shrink-0">
                 {diag.errors > 0 && (
                   <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-500 leading-none">
@@ -260,6 +262,16 @@ const EditorTabs: React.FC<EditorTabsProps> = ({
                 {diag.warnings > 0 && (
                   <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-500 leading-none">
                     {diag.warnings}
+                  </span>
+                )}
+                {diag.infos > 0 && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-blue-500/20 text-blue-500 leading-none">
+                    {diag.infos}
+                  </span>
+                )}
+                {diag.hints > 0 && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-500 leading-none">
+                    {diag.hints}
                   </span>
                 )}
               </span>
