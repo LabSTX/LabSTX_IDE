@@ -38,6 +38,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
     "monaco-editor": "^0.45.0",
+    "monaco-textmate":"^3.0.1",
     "monaco-editor-textmate": "^4.0.0",
     "onigasm": "^2.2.5",
     "monaco-languageclient": "^10.7.0",
