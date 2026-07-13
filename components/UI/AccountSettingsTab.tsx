@@ -269,7 +269,7 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({ wallet, deploye
         <footer className="mt-24 pt-8 border-t border-labstx-border flex flex-col md:flex-row justify-between items-center gap-6 text-[11px] font-bold text-labstx-muted uppercase tracking-widest animate-in">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-labstx-orange" />
-            LabSTX IDE v1.2.1
+            LabSTX IDE v1.2.2 Preview
           </div>
           <div className="flex gap-8">
             <a href="#" className="hover:text-labstx-text transition-colors">Privacy Policy</a>

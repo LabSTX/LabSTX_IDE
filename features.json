@@ -1,6 +1,6 @@
 [
         {
-            "badge": "v1.2.1 Release",
+            "badge": "v1.2.2 Preview Release",
             "title": "Clarity 5 & Epoch 3.4 Upgrade",
             "description": "Upgraded to Clarity 5 and Epoch 3.4",
             "bullets": ["Clarity 5", "Epoch 3.4"],
