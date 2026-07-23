@@ -133,6 +133,28 @@ export const HIRO_TEMPLATES: HiroTemplate[] = [
 
 export class HiroTemplateService {
   /**
+   * Fetch repository updates (last pushed_at dates) for all templates
+   */
+  static async fetchUpdates(): Promise<Record<string, string>> {
+    const updates: Record<string, string> = {};
+    const fetchPromises = HIRO_TEMPLATES.map(async (t) => {
+      try {
+        const repoName = t.repoUrl.split('/').pop();
+        const res = await fetch(`https://api.github.com/repos/hirosystems/${repoName}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pushed_at) updates[t.id] = data.pushed_at;
+        }
+      } catch (err) {
+        // ignore errors for individual repos to not fail the whole batch
+      }
+    });
+    
+    await Promise.allSettled(fetchPromises);
+    return updates;
+  }
+
+  /**
    * Fetch the README content for a template
    */
   static async fetchReadme(url: string): Promise<string> {

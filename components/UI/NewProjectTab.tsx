@@ -36,12 +36,47 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
     const [hiroReadme, setHiroReadme] = React.useState<string | null>(null);
     const [hiroReadmeTitle, setHiroReadmeTitle] = React.useState<string>('');
 
+    const [repoLastUpdated, setRepoLastUpdated] = React.useState<string | null>(null);
+    const [hiroUpdates, setHiroUpdates] = React.useState<Record<string, string>>({});
+
+    const timeAgo = (dateStr: string) => {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " years ago";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " months ago";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " days ago";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " hours ago";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " mins ago";
+        return Math.floor(seconds) + " seconds ago";
+    };
+
     React.useEffect(() => {
         const loadTemplates = async () => {
             try {
                 setLoading(true);
-                const data = await GitHubTemplateService.fetchTemplates();
+                const [data, repoRes, hiroRes] = await Promise.all([
+                    GitHubTemplateService.fetchTemplates(),
+                    fetch('https://api.github.com/repos/LabSTX/LabSTX-Workshops').then(res => res.ok ? res.json() : null).catch(() => null),
+                    HiroTemplateService.fetchUpdates()
+                ]);
                 setTemplates(data);
+                if (repoRes && repoRes.pushed_at) {
+                    setRepoLastUpdated(timeAgo(repoRes.pushed_at));
+                }
+
+                const formattedHiroUpdates: Record<string, string> = {};
+                for (const [id, dateStr] of Object.entries(hiroRes)) {
+                    formattedHiroUpdates[id] = timeAgo(dateStr);
+                }
+                setHiroUpdates(formattedHiroUpdates);
+
                 setError(null);
             } catch (err) {
                 console.error('Failed to load templates:', err);
@@ -216,6 +251,9 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             )}
                             <h3 className="text-[10px] font-black  uppercase tracking-[0.1em] ">Default Templates  <span className="text-caspier-muted text-[10px] font-medium ml-1">(Maintained by LabSTX)</span></h3>
                             <div className="h-[2px] flex-1 bg-caspier-border ml-6" />
+                            {repoLastUpdated && (
+                                <span id="labstx-template-updated" className='text-caspier-muted text-[10px] font-medium ml-1 whitespace-nowrap'> Updated {repoLastUpdated}</span>
+                            )}
                         </div>
 
                         {loading ? (
@@ -297,8 +335,13 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             {HIRO_TEMPLATES.map((template) => (
                                 <div
                                     key={template.id}
-                                    className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
+                                    className="relative flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
                                 >
+                                    {hiroUpdates[template.id] && (
+                                        <div className="absolute top-3 right-3 bg-caspier-dark text-caspier-muted border border-caspier-border rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest shadow-sm z-10">
+                                            {hiroUpdates[template.id]}
+                                        </div>
+                                    )}
                                     <div className="flex-1">
                                         <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                                             <SmartFileIcon name={template.id + ".clar"} className="w-6 h-6" />
