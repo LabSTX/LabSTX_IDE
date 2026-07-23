@@ -2042,7 +2042,7 @@ Include the corrected full and detailed code`;
                 return;
             }
 
-            const newFileNodes = filesToFileNodes(serverFiles, activeWorkspace);
+            const newFileNodes = filesToFileNodes(serverFiles, activeWorkspace, files);
 
             setWorkspaces(prev => ({ ...prev, [activeWorkspace]: newFileNodes }));
             addToHistory(newFileNodes);
@@ -3430,7 +3430,7 @@ Include the corrected full and detailed code`;
                                             size="sm"
                                             onClick={handleCompile}
                                             disabled={!isClarityFile}
-                                            className="rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                            className="hidden rounded-full flex gap-2 items-center !py-1 shadow-none active:shadow-none translate-x-[0px] translate-y-[0px] active:translate-x-[0px] active:translate-y-[0px] disabled:opacity-40 disabled:cursor-not-allowed"
                                             title={isClarityFile ? "Run Clarinet Check (F5)" : "Open a .clar file to compile"}
                                         >
                                             <PlayIcon className="w-3 h-3" />

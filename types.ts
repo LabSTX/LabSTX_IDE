@@ -39,7 +39,6 @@ export interface TerminalLine {
 }
 
 export interface TerminalInstance {
-    type: string;
     id: string;
     title: string;
     lines: TerminalLine[];
