@@ -251,9 +251,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             )}
                             <h3 className="text-[10px] font-black  uppercase tracking-[0.1em] ">Default Templates  <span className="text-caspier-muted text-[10px] font-medium ml-1">(Maintained by LabSTX)</span></h3>
                             <div className="h-[2px] flex-1 bg-caspier-border ml-6" />
-                            {repoLastUpdated && (
-                                <span id="labstx-template-updated" className='text-caspier-muted text-[10px] font-medium ml-1 whitespace-nowrap'> Updated {repoLastUpdated}</span>
-                            )}
+
                         </div>
 
                         {loading ? (
@@ -276,8 +274,14 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                 {templates.map((template) => (
                                     <div
                                         key={template.id}
-                                        className="flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all  group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
+                                        className="relative flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all  group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
                                     >
+                                        {repoLastUpdated && (
+                                            <span className="absolute -top-2 -right-2 bg-blue-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10">
+                                                Updated {repoLastUpdated}
+                                            </span>
+                                        )}
+
                                         <div className="flex-1">
                                             <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                                                 <SmartFileIcon name={template.id + ".clar"} className="w-6 h-6" />
@@ -338,9 +342,9 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                                     className="relative flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
                                 >
                                     {hiroUpdates[template.id] && (
-                                        <div className="absolute top-3 right-3 bg-caspier-dark text-caspier-muted border border-caspier-border rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest shadow-sm z-10">
-                                            {hiroUpdates[template.id]}
-                                        </div>
+                                        <span className="absolute -top-2 -right-2 bg-blue-400 text-black text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10">
+                                            Updated {hiroUpdates[template.id]}
+                                        </span>
                                     )}
                                     <div className="flex-1">
                                         <div className="w-12 h-12 rounded-xl bg-caspier-dark border border-caspier-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
