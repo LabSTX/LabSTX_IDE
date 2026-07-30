@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ActivityView } from '../../types';
-import { FileIcon, SearchIcon, GitIcon, BugIcon, SettingsIcon, RocketIcon, HomeIcon, ActivityIcon, GlobeIcon, UserIcon, BarChartIcon, DatabaseIcon, CheckCircleIcon, BookOpenIcon } from '../UI/Icons';
+import { FileIcon, SearchIcon, GitIcon, BugIcon, SettingsIcon, RocketIcon, HomeIcon, ActivityIcon, GlobeIcon, UserIcon, BarChartIcon, DatabaseIcon, CheckCircleIcon, BookOpenIcon, GitHubIcon } from '../UI/Icons';
 
 import { useGitHubAuth } from '../../contexts/GitHubAuthContext';
 import AccountPopover from '../UI/AccountPopover';
@@ -27,9 +27,11 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
   const items = [
     { view: ActivityView.EXPLORER, icon: FileIcon, label: 'Explorer' },
     { view: ActivityView.SEARCH, icon: SearchIcon, label: 'Search' },
+    // { view: ActivityView.SEARCH, icon: GitHubIcon, label: 'GitHub' },
     { view: ActivityView.DEPLOY, icon: RocketIcon, label: 'Deploy & Run' },
+    // { view: ActivityView.SEARCH, icon: BugIcon, label: 'Debug' },
     { view: ActivityView.CALL_CONTRACT, icon: FunctionSquareIcon, label: 'Call Functions & Query States' },
-    // { view: ActivityView.SIMNET, icon: DatabaseIcon, label: 'Simnet Simulation' },
+    //  { view: ActivityView.SIMNET, icon: DatabaseIcon, label: 'STXER Simulation' },
     { view: ActivityView.UNIT_TEST, icon: TestTubeDiagonal, label: 'Clarity Unit Testing' },
     { view: ActivityView.ACTIVITY_HISTORY, icon: ActivityIcon, label: 'Activity History' },
     //{ view: ActivityView.LEARN_STX, icon: GlobeIcon, label: 'Learn STX' },
@@ -74,23 +76,25 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
             <HomeIcon className="w-6 h-6" />
           </button>
 
-          <div className="w-6 h-[1px] bg-caspier-border mb-2" />
+          <div className="w-6 h-[1px] bg-caspier-border " />
+          <div className="flex flex-col gap-y-6  overflow-y-auto max-h-[calc(100vh-80px)]">
+            {items.map((item) => (
+              <button
+                key={item.view}
+                id={`view-${item.view.toLowerCase()}`}
+                onClick={() => handleItemClick(item.view)}
+                className={`p-2 w-full flex justify-center transition-colors relative group ${activeView === item.view && isSidebarVisible ? 'text-labstx-orange' : 'text-caspier-muted hover:text-caspier-text'
+                  }`}
+                title={item.label}
+              >
+                {activeView === item.view && isSidebarVisible && (
+                  <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-labstx-orange" />
+                )}
+                <item.icon className="w-6 h-6" />
+              </button>
+            ))}
+          </div>
 
-          {items.map((item) => (
-            <button
-              key={item.view}
-              id={`view-${item.view.toLowerCase()}`}
-              onClick={() => handleItemClick(item.view)}
-              className={`p-2 w-full flex justify-center transition-colors relative group ${activeView === item.view && isSidebarVisible ? 'text-labstx-orange' : 'text-caspier-muted hover:text-caspier-text'
-                }`}
-              title={item.label}
-            >
-              {activeView === item.view && isSidebarVisible && (
-                <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-labstx-orange" />
-              )}
-              <item.icon className="w-6 h-6" />
-            </button>
-          ))}
         </div>
 
         <div className="flex flex-col gap-4 pb-2 w-full items-center">

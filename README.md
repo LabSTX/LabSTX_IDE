@@ -1,5 +1,10 @@
 # <img src="./public/lab_stx_dark.png" alt="LabSTX Logo" width="40" align="center" /> LabSTX: Lightweight Smart Contract Clarity IDE &nbsp; <br/> [![Stacks Documentation](https://img.shields.io/badge/Stacks_Documentation-Referenced_&_Trusted-blue)](https://docs.stacks.co/clarinet/overview#additional-resources)
 
+<video controls width="100%">
+  <source src="public/labstx-intro.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
 ## Overview
 
 LabSTX is a browser-native Integrated Development Environment (IDE) specifically engineered for the Clarity smart contract language. Unlike basic playgrounds, LabSTX supports multi-file project architectures powered by an integrated Clarinet runtime.

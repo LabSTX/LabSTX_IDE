@@ -251,7 +251,9 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             )}
                             <h3 className="text-[10px] font-black  uppercase tracking-[0.1em] ">Default Templates  <span className="text-caspier-muted text-[10px] font-medium ml-1">(Maintained by LabSTX)</span></h3>
                             <div className="h-[2px] flex-1 bg-caspier-border ml-6" />
-
+                            {repoLastUpdated && (
+                                <span id="labstx-template-updated" className='text-caspier-muted text-[10px] font-medium ml-1 whitespace-nowrap'> Updated {repoLastUpdated}</span>
+                            )}
                         </div>
 
                         {loading ? (
