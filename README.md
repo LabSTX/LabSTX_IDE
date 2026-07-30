@@ -1,9 +1,6 @@
 # <img src="./public/lab_stx_dark.png" alt="LabSTX Logo" width="40" align="center" /> LabSTX: Lightweight Smart Contract Clarity IDE &nbsp; <br/> [![Stacks Documentation](https://img.shields.io/badge/Stacks_Documentation-Referenced_&_Trusted-blue)](https://docs.stacks.co/clarinet/overview#additional-resources)
 
-<video controls width="100%">
-  <source src="public/labstx-intro.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
-</video>
+[![Watch the demo video](public/labstx-intro.mp4)](public/labstx-intro.mp4)
 
 ## Overview
 
