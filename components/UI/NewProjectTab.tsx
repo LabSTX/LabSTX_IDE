@@ -38,6 +38,16 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
 
     const [repoLastUpdated, setRepoLastUpdated] = React.useState<string | null>(null);
     const [hiroUpdates, setHiroUpdates] = React.useState<Record<string, string>>({});
+    const [searchQuery, setSearchQuery] = React.useState('');
+
+    const filteredTemplates = templates.filter(t =>
+        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    const filteredHiroTemplates = HIRO_TEMPLATES.filter(t =>
+        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     const timeAgo = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -232,6 +242,17 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                         </button>
                     </div>
 
+                    {/* Search */}
+                    <div className="mb-8">
+                        <input
+                            type="text"
+                            placeholder="Search templates..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-caspier-black/50 border-2 border-caspier-border rounded px-4 py-3 text-white placeholder-caspier-muted focus:outline-none focus:border-labstx-orange transition-colors"
+                        />
+                    </div>
+
                     {/* Templates Section */}
                     <div className='w-full'>
                         <div className="flex items-center justify-between my-6 gap-3
@@ -273,7 +294,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                                {templates.map((template) => (
+                                {filteredTemplates.map((template) => (
                                     <div
                                         key={template.id}
                                         className="relative flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all  group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"
@@ -338,7 +359,7 @@ export const NewProjectTab: React.FC<NewProjectTabProps> = ({
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                            {HIRO_TEMPLATES.map((template) => (
+                            {filteredHiroTemplates.map((template) => (
                                 <div
                                     key={template.id}
                                     className="relative flex flex-col p-5 bg-caspier-black/50 border-2 border-caspier-border hover:border-labstx-orange transition-all group text-left h-full hover:shadow-[4px_4px_0_0_rgba(0,123,255,0.4)]"

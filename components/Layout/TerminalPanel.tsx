@@ -6,7 +6,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import 'xterm/css/xterm.css';
 import { webContainerService } from '../../services/webContainerService';
-import { ExternalLink, ChevronRight } from 'lucide-react';
+import { ExternalLink, ChevronRight, AlertCircle, AlertTriangle, Info, Lightbulb } from 'lucide-react';
 
 // Clarinet Commands Database
 const CLARINET_COMMANDS = [
@@ -65,9 +65,9 @@ const CLARINET_COMMANDS = [
             { flag: '--enable-clarity-wasm', description: 'Allow the Clarity Wasm preview to run in parallel with the Clarity interpreter (beta)' }
         ],
         repl_commands: [
-            '::help', '::functions', '::keywords', '::describe', '::toggle_costs', '::toggle_timings', 
-            '::mint_stx', '::set_tx_sender', '::get_assets_maps', '::get_contracts', '::get_block_height', 
-            '::advance_chain_tip', '::advance_stacks_chain_tip', '::advance_burn_chain_tip', '::set_epoch', 
+            '::help', '::functions', '::keywords', '::describe', '::toggle_costs', '::toggle_timings',
+            '::mint_stx', '::set_tx_sender', '::get_assets_maps', '::get_contracts', '::get_block_height',
+            '::advance_chain_tip', '::advance_stacks_chain_tip', '::advance_burn_chain_tip', '::set_epoch',
             '::get_epoch', '::debug', '::trace', '::get_costs', '::reload', '::read', '::encode', '::decode'
         ]
     },
@@ -221,7 +221,7 @@ interface TerminalPanelProps {
     onSaveFile?: () => void;
 }
 
-type TerminalTab = 'TERMINAL' | 'OUTPUT' | 'PROBLEMS' | 'PROCESSES';
+type TerminalTab = 'TERMINAL' | 'OUTPUT' | 'PROBLEMS' | 'PROCESSES' | 'DIAGNOSTICS';
 
 const TerminalRow: React.FC<{
     line: TerminalLine;
@@ -382,7 +382,28 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const [isTabsCollapsed, setIsTabsCollapsed] = useState(false);
     const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
     const [pendingCommandToExecute, setPendingCommandToExecute] = useState<string | null>(null);
-    
+
+    // Clarity LSP Diagnostics state
+    const [clarityDiagnostics, setClarityDiagnostics] = useState<{ uri: string, diagnostics: any[] }[]>([]);
+    const [diagnosticsSearch, setDiagnosticsSearch] = useState('');
+
+    useEffect(() => {
+        const handleDiagnostics = (e: any) => {
+            const { uri, diagnostics } = e.detail;
+            setClarityDiagnostics(prev => {
+                const index = prev.findIndex(p => p.uri === uri);
+                if (index >= 0) {
+                    const next = [...prev];
+                    next[index] = { uri, diagnostics };
+                    return next;
+                }
+                return [...prev, { uri, diagnostics }];
+            });
+        };
+        window.addEventListener('clarityLspDiagnostics', handleDiagnostics);
+        return () => window.removeEventListener('clarityLspDiagnostics', handleDiagnostics);
+    }, []);
+
     // Autocomplete state
     const [showAutocomplete, setShowAutocomplete] = useState(false);
     const [filteredCommands, setFilteredCommands] = useState<typeof CLARINET_COMMANDS>([]);
@@ -450,6 +471,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
             case 'OUTPUT': return <PlayIcon className="w-3.5 h-3.5" />;
             case 'PROBLEMS': return <BugIcon className="w-3.5 h-3.5" />;
             case 'PROCESSES': return <ActivityIcon className="w-3.5 h-3.5" />;
+            case 'DIAGNOSTICS': return <AlertCircle className="w-3.5 h-3.5" />;
         }
     };
 
@@ -519,9 +541,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
         }
 
         const lowerInput = input.toLowerCase().trim();
-        
+
         // Filter commands by name match (substring search)
-        const filtered = CLARINET_COMMANDS.filter(cmd => 
+        const filtered = CLARINET_COMMANDS.filter(cmd =>
             cmd.name.toLowerCase().includes(lowerInput)
         );
 
@@ -585,7 +607,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
         if (showAutocomplete && filteredCommands.length > 0) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                setSelectedCommandIndex(prev => 
+                setSelectedCommandIndex(prev =>
                     prev < filteredCommands.length - 1 ? prev + 1 : prev
                 );
                 return;
@@ -881,9 +903,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
                                 autoComplete="off"
                                 autoFocus
                             />
-                            
+
                             {/* Autocomplete Dropdown */}
-                          
+
                         </div>
                         {activeTerminal.isProcessRunning && onKillProcess && (
                             <button
@@ -1057,11 +1079,109 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
         );
     };
 
+    const renderClarinetCheck = () => {
+        let allDiagnostics = clarityDiagnostics.flatMap(d => d.diagnostics.map(diag => ({ ...diag, uri: d.uri })));
+
+        if (diagnosticsSearch.trim()) {
+            const query = diagnosticsSearch.toLowerCase();
+            allDiagnostics = allDiagnostics.filter(diag =>
+                diag.message?.toLowerCase().includes(query) ||
+                diag.uri?.toLowerCase().includes(query)
+            );
+        }
+
+        return (
+            <div className="flex-1 flex flex-col overflow-hidden bg-caspier-black">
+                <div className="p-2 border-b border-caspier-border bg-caspier-panel flex items-center gap-2 sticky top-0 z-10">
+                    <input
+                        type="text"
+                        placeholder="Search diagnostics..."
+                        value={diagnosticsSearch}
+                        onChange={(e) => setDiagnosticsSearch(e.target.value)}
+                        className="w-full bg-caspier-dark border border-caspier-border text-caspier-text text-xs rounded px-2 py-1 outline-none focus:border-labstx-orange"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto p-0 text-xs">
+                    {allDiagnostics.length === 0 ? (
+                        <div className="p-4 text-caspier-muted italic flex items-center gap-2">
+                            <CheckIcon className="w-4 h-4 text-green-500" />
+                            No Clarity issues detected.
+                        </div>
+                    ) : (
+                        <table className="w-full text-left border-collapse">
+                            <thead className="bg-caspier-panel text-caspier-muted font-bold sticky top-0 border-b border-caspier-border">
+                                <tr>
+                                    <th className="p-2 w-8"></th>
+                                    <th className="p-2">Message</th>
+                                    <th className="p-2 w-28">File</th>
+                                    <th className="p-2 w-24">Location</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {allDiagnostics.map((diag, i) => {
+                                    let severityColor = 'text-caspier-muted';
+                                    let bgColor = 'bg-caspier-black/20';
+                                    let Icon = Info;
+                                    if (diag.severity === 1) { // Error
+                                        severityColor = 'text-red-500';
+                                        bgColor = 'bg-red-500/20';
+                                        Icon = AlertCircle;
+                                    } else if (diag.severity === 2) { // Warning
+                                        severityColor = 'text-yellow-500';
+                                        bgColor = 'bg-yellow-500/20';
+                                        Icon = AlertTriangle;
+                                    } else if (diag.severity === 3) { // Info
+                                        severityColor = 'text-blue-400';
+                                        bgColor = 'bg-blue-400/20';
+                                        Icon = Info;
+                                    } else if (diag.severity === 4) { // Hint
+                                        severityColor = 'text-green-400';
+                                        bgColor = 'bg-green-400/20';
+                                        Icon = Lightbulb;
+                                    }
+
+                                    return (
+                                        <tr
+                                            key={i}
+                                            className={`border-b border-caspier-border hover:opacity-80 group cursor-pointer transition-colors ${bgColor}`}
+                                            onClick={() => {
+                                                if (onLocateProblem) {
+                                                    const cleanUri = diag.uri.replace(/^file:\/\/\//, 'c:/').replace(/\//g, '\\');
+                                                    onLocateProblem(
+                                                        cleanUri,
+                                                        (diag.range?.start?.line ?? 0) + 1,
+                                                        (diag.range?.start?.character ?? 0) + 1
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            <td className="p-2 text-center">
+                                                <Icon className={`w-4 h-4 ${severityColor} inline`} />
+                                            </td>
+                                            <td className={`p-2 ${severityColor}`}>{diag.message}</td>
+                                            <td className="p-2 text-caspier-muted font-mono truncate max-w-[7rem]" title={diag.uri}>{diag.uri.split('/').pop()}</td>
+                                            <td className="p-2 text-caspier-muted font-mono">
+                                                <span className="bg-caspier-dark/60 px-1.5 py-0.5 rounded border border-caspier-border text-[10px]">
+                                                    {diag.range?.start?.line !== undefined ? diag.range.start.line + 1 : '?'}:
+                                                    {diag.range?.start?.character !== undefined ? diag.range.start.character + 1 : '?'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div id="terminal-panel" className="bg-caspier-black border-t border-caspier-border w-full flex flex-col" style={{ height: `${height}px` }}>
             <div className="flex border-b border-caspier-border bg-caspier-panel h-8 justify-between items-center pr-2">
                 <div className="flex h-full">
-                    {(['TERMINAL', 'OUTPUT', 'PROBLEMS', 'PROCESSES'] as TerminalTab[]).map((tab) => (
+                    {(['TERMINAL', 'OUTPUT', 'PROBLEMS', 'PROCESSES', 'DIAGNOSTICS'] as TerminalTab[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -1074,6 +1194,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
                             <span>{tab}</span>
                             {tab === 'PROBLEMS' && problems.length > 0 && <span className="ml-0.5 opacity-50">({problems.length})</span>}
                             {tab === 'PROCESSES' && terminals.filter(t => t.isProcessRunning).length > 0 && <span className="ml-0.5 text-blue-400 font-bold">({terminals.filter(t => t.isProcessRunning).length})</span>}
+                            {tab === 'DIAGNOSTICS' && clarityDiagnostics.flatMap(d => d.diagnostics).length > 0 && <span className="ml-0.5 text-red-500 font-bold">({clarityDiagnostics.flatMap(d => d.diagnostics).length})</span>}
                         </button>
                     ))}
                 </div>
@@ -1154,6 +1275,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({
             {activeTab === 'OUTPUT' && renderOutput()}
             {activeTab === 'PROBLEMS' && renderProblems()}
             {activeTab === 'PROCESSES' && renderProcesses()}
+            {activeTab === 'DIAGNOSTICS' && renderClarinetCheck()}
 
             {/* Unsaved Files Dialog */}
             {showUnsavedDialog && (

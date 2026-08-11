@@ -670,10 +670,10 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
     const [isVersionsOpen, setIsVersionsOpen] = useState(true);
     const [systemVersions, setSystemVersions] = useState({
-        clarity: '5',
+        clarity: '6',
         node: 'v22.22.0',
         npm: 'v10.9.0',
-        clarinet: 'v3.16.0',
+        clarinet: 'v3.21.1',
         epoch: '3.4'
     });
 
