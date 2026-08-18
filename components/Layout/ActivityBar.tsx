@@ -34,7 +34,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({ activeView, setActiveView, is
     //  { view: ActivityView.SIMNET, icon: DatabaseIcon, label: 'STXER Simulation' },
     { view: ActivityView.UNIT_TEST, icon: TestTubeDiagonal, label: 'Clarity Unit Testing' },
     { view: ActivityView.ACTIVITY_HISTORY, icon: ActivityIcon, label: 'Activity History' },
-    //{ view: ActivityView.LEARN_STX, icon: GlobeIcon, label: 'Learn STX' },
+ //  { view: ActivityView.LEARN_STX, icon: GlobeIcon, label: 'Learn Stacks' },
     { view: ActivityView.HELP_WALKTHROUGH, icon: CircleQuestionMarkIcon, label: 'Help & Walkthrough' },
   ];
 

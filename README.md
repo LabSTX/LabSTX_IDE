@@ -31,7 +31,7 @@ LabSTX eliminates these barriers by providing a pre-configured, cloud-synced wor
 | Capability        | **LabSTX IDE (Cloud)**          | Clarinet (Local)           | Hiro IDE (official)| Hiro Sandbox | Claride |
 | ----------------- | --------------------------- | -------------------------- | ----------------------- | ------- | --- |
 | **Multi-file Support**| ✅ **Yes**                  | ✅ Yes                      | Partially | ❌ No | ⚠️ Limited |
-| **LSP Support**| ✅ **Yes** (but still in preview v1.2.2)| ✅ Yes (not as default) |✅ Yes| ❌ No | ❌ No |
+| **LSP Support**| ✅ **Yes** | ✅ Yes (not as default) |✅ Yes| ❌ No | ❌ No |
 | **Templates**| ✅ **Yes** (Access to LabSTX Templates & Hiro Templates)                 | ❌ No| ❌ No | ❌ No | ❌ No |
 | **Active Development**| ✅ **Yes**  | ⚠️ Periodic                 | ❌ Stale                | ❌ Stale | ❌ Stale |
 | **Setup Latency** | ✅ Immediate (URL-based)     | ❌ ~30m Installation/Config | ✅ Immediate            | ✅ Immediate | ✅ Immediate |

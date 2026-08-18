@@ -22,6 +22,7 @@ import ContractPanel from '../ContractPanel/ContractPanel';
 //import { TEMPLATES, templateToFileNodes } from '../../services/templates';
 import { DiscoveryImportModal, DiscoveryImportType, StacksNetworkType } from './DiscoveryImportModal';
 import { ArrowUpDown, CircleQuestionMarkIcon, CloudDownloadIcon, InfoIcon } from 'lucide-react';
+import { renderLearnSTX } from './SiderBarItems/renderLearnSTX';
 
 const sortNodes = (nodes: FileNode[]) => {
     return [...nodes].sort((a, b) => {
@@ -2003,35 +2004,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         );
     };
 
-    const renderLearnSTX = () => (
-        <div className="flex flex-col h-full bg-caspier-black">
-            <div className="p-4 border-b border-caspier-border flex justify-between items-center bg-caspier-black">
-                <div className="flex items-center gap-2">
-                    <GlobeIcon className="w-3.5 h-3.5 text-labstx-orange" />
-                    <h2 className="text-[10px] font-black text-caspier-muted tracking-[0.2em] uppercase">Learn Stacks</h2>
-                </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-labstx-orange/10 flex items-center justify-center border border-caspier-border animate-pulse">
-                    <GlobeIcon className="w-8 h-8 text-labstx-orange" />
-                </div>
-                <div className="space-y-1">
-                    <h3 className="text-sm font-black text-caspier-text uppercase tracking-widest">Under Development</h3>
-                    <p className="text-[11px] text-caspier-muted font-bold px-4 leading-relaxed">
-                        We're currently building a interactive learning experience for Stacks developers. Stay tuned!
-                    </p>
-                </div>
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => window.open('https://docs.stacks.co', '_blank')}
-                    className="mt-4 text-[10px] uppercase font-black tracking-widest rounded-full px-6"
-                >
-                    Visit Official Docs
-                </Button>
-            </div>
-        </div>
-    );
+
 
     const renderHelpWalkthrough = () => {
         const tours = [
@@ -2109,6 +2082,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         );
     };
 
+    const renderLearnStacks = () => {
+        <div className="flex flex-col h-full">
+            <renderLearnSTX />
+        </div>
+    }
+
+
     const renderPlaceholder = () => (
         <div className="flex flex-col h-full">
             <div className="p-4 border-b border-caspier-border bg-caspier-black">
@@ -2126,7 +2106,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
             case ActivityView.GIT: return renderGit();
             case ActivityView.DEPLOY: return renderDeploy();
             case ActivityView.ACTIVITY_HISTORY: return renderActivityHistory();
-            case ActivityView.LEARN_STX: return renderLearnSTX();
+            //  case ActivityView.LEARN_STX: return renderLearnSTX();
             case ActivityView.SETTINGS: return renderSettings();
             case ActivityView.SIMNET: return renderSimnet();
             case ActivityView.UNIT_TEST: return renderClarityUnitTest();
@@ -2193,7 +2173,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
                         deployedContracts.add(contractName);
                     } catch (err: any) {
                         const msg = String(err?.message || err).toLowerCase();
-                        if (msg.includes('already exists') || msg.includes('duplicate')) {
+                        if (msg.includes('already exisAts') || msg.includes('duplicate')) {
                             deployedContracts.add(contractName);
                         } else {
                             onAddTerminalLine?.({ type: 'error', content: `  ✗ Deployment Failed: ${file.name}\n    ${err.message}` });

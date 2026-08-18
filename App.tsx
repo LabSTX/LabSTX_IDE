@@ -3782,7 +3782,7 @@ Include the corrected full and detailed code`;
                     </dialog>
                     <span>{activeLanguage.toUpperCase()}</span>
 
-                    <span className='mr-2'>LabSTX v1.2.2 Preview</span>
+                    <span className='mr-2'>LabSTX v1.2.2</span>
                 </div>
             </div>
 
