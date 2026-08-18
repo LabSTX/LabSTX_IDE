@@ -40,6 +40,18 @@ LabSTX eliminates these barriers by providing a pre-configured, cloud-synced wor
 | **Wallet Integration**| ✅ Xverse & Leather + Simnet         | Simnet       | Wallet  Only  | Wallet Only| Wallet Only
 
 
+## 🚀 What's New in v1.2.2
+
+- **LSP Support & Diagnostics:** Added real-time diagnostics using the `clarity-lsp` Rust crate compiled to WASM in Clarinet components.
+- **Enhanced Project Management:** Added search functionality in `NewProjectTab` and updated last modified time display.
+- **Additional Improvements:** Various stability fixes and other minor features.
+
+<p align="center">
+ <img src="./pics/lsp-diagonistics.png" alt="LSP and Diagnostics" width="85%"/>
+  <br/>
+  <em>LSP and Diagnostics in Action</em>
+</p>
+
 ## 🛠 Technical Features
 
 ### 1. Advanced Project Management
